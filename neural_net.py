@@ -10,6 +10,11 @@ import torch.optim as optim
 
 from data_loader import load_samples
 
+# Make sure the gpu is connected
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device_name = device.type == 'cuda' and f'GPU ({torch.cuda.get_device_name(0)})' or 'CPU'
+torch.cuda.empty_cache()
+print(f"Running on {device_name}")
 
 class FacialRecognitionNetwork(nn.Module):
     def __init__(self):
@@ -18,18 +23,18 @@ class FacialRecognitionNetwork(nn.Module):
         # Input size: 1x48x48
         # Convolutional layers
         self.convolutional = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.Conv2d(1, 8, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.Conv2d(8, 16, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(num_features=64),
+            # nn.BatchNorm2d(num_features=16),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Dropout(),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.Conv2d(16, 32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(128, 256, kernel_size=3),
+            nn.Conv2d(32, 64, kernel_size=3),
             nn.ReLU(inplace=True),
-            nn.BatchNorm2d(num_features=256),
+            # nn.BatchNorm2d(num_features=64),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Dropout(),
             nn.Flatten(),
@@ -37,8 +42,11 @@ class FacialRecognitionNetwork(nn.Module):
 
         # Linear layers
         self.linear = nn.Sequential(
-            nn.Linear(30976, 1024),
-            nn.Dropout(),
+            nn.Linear(30976//4, 1024),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
             nn.Linear(1024, 7)
         )
 
@@ -76,11 +84,12 @@ def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limi
 
 def train_model():
     # Load the prepared data
-    training_data = prepare_training_data('datasets/fer2013_train.samples', batch_size=2000)
+    training_data = prepare_training_data('datasets/fer2013_train.samples', batch_size=1000)
     
     # Load the model from file
     network = FacialRecognitionNetwork()
-    # network.load_state_dict(torch.load('models/model.pt'), strict=False)
+    network.load_state_dict(torch.load('models/model.pt'), strict=False)
+    network.to(device)
 
     # Create the optimizer
     optimizer = optim.Adam(network.parameters(), lr=0.001)
@@ -95,6 +104,8 @@ def train_model():
     for epoch in range(num_epochs):
         print(f"Epoch {epoch}/{num_epochs}")
         for i, (data, target) in enumerate(training_data):
+            data = data.to(device)
+            target = target.to(device)
             optimizer.zero_grad()
             output = network(data)
             loss = loss_function(output, target)
@@ -107,6 +118,7 @@ def train_model():
     return network
 
 def test_model(network: FacialRecognitionNetwork):
+    network = network.to(device)
     # Test the model for validation
     validation_data = load_samples('datasets/fer2013_valid.samples')
     correct = 0
@@ -116,6 +128,7 @@ def test_model(network: FacialRecognitionNetwork):
 
     print("Validating model...")
     for data, target in tqdm(zip(*validation_data), total=len(validation_data[0])):
+        data = data.view(-1, 1, 48, 48).to(device)
         output = network(data)
         # Get the highest index in the output
         _, predicted = torch.max(output.data, 1)
@@ -140,6 +153,7 @@ def test_model(network: FacialRecognitionNetwork):
 
     print("Validating model...")
     for data, target in tqdm(zip(*training_data), total=len(training_data[0])):
+        data = data.view(-1, 1, 48, 48).to(device)
         output = network(data)
         # Get the highest index in the output
         _, predicted = torch.max(output.data, 1)
