@@ -109,11 +109,11 @@ def load_samples_generator(samples_file: str):
         print(f'{samples_file} not found.')
         return None
 
-def load_samples(samples_file: str):
+def load_samples(samples_file: str, limit: int = None):
     # Load the samples
     samples = load_samples_generator(samples_file)
     # Get the number of samples
-    num_samples = next(samples)
+    num_samples = next(samples) if limit is None else min(next(samples), limit)
     # Create a tensor to store the samples
     tensor = torch.zeros(num_samples, 1, 48, 48)
     # Create a tensor to store the labels
@@ -121,6 +121,8 @@ def load_samples(samples_file: str):
     # Load the samples
     print(f"Loading samples from {samples_file}")
     for i, (sample, label) in tqdm(enumerate(samples), total=num_samples):
+        if i == limit:
+            break
         tensor[i] = sample
         labels[i] = label
 

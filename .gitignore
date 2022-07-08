@@ -132,3 +132,5 @@ dmypy.json
 # ---- Custom ----
 # Downloaded Datasets
 datasets/
+# Model weights
+models/
