@@ -21,16 +21,16 @@ class FacialRecognitionNetwork(nn.Module):
         # Input size: 1x48x48
         # Convolutional layers
         self.convolutional = nn.Sequential(
-            nn.Conv2d(1, 8, kernel_size=3, padding=1),
+            nn.Conv2d(1, 6, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(8, 16, kernel_size=3, padding=1),
+            nn.Conv2d(6, 12, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
             # nn.BatchNorm2d(num_features=16),
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Dropout(),
-            nn.Conv2d(16, 32, kernel_size=3, padding=1),
+            nn.Conv2d(12, 24, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, 64, kernel_size=3),
+            nn.Conv2d(24, 48, kernel_size=3),
             nn.ReLU(inplace=True),
             # nn.BatchNorm2d(num_features=64),
             nn.MaxPool2d(kernel_size=2, stride=2),
@@ -40,7 +40,7 @@ class FacialRecognitionNetwork(nn.Module):
 
         # Linear layers
         self.linear = nn.Sequential(
-            nn.Linear(30976//4, 1024),
+            nn.Linear(121*48, 1024),
             nn.ReLU(),
             nn.Dropout(0.1),
             nn.Linear(1024, 1024),
@@ -127,7 +127,7 @@ def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limi
 
 def print_confusion_matrix(cm: np.ndarray):
     SHORTER = list(map(lambda x: x.lower()[0:3], EMOTION))
-    header = ' ' + '  '.join(SHORTER) + ' '
+    header = ' ' + '  '.join(SHORTER) + '  ptot '
     print("     " + 'Actual'.center(len(header)))
     print("     " + header)
     for i, head in enumerate(SHORTER):
@@ -149,4 +149,9 @@ def print_confusion_matrix(cm: np.ndarray):
 
             # print(bg_ansi + fg_ansi + str(el).rjust(5), end='\033[0m')
             print(str(el).rjust(5), end='')
-        print()
+            
+        print(str(np.sum(cm[i])).rjust(5))
+    print('atot', end='')
+    for i, head in enumerate(SHORTER):
+        print(str(np.sum(cm[:, i])).rjust(5), end='')
+    print()

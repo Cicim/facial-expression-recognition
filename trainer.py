@@ -138,7 +138,15 @@ def main():
             test_sequence(network)
 
     elif chosen == "load_train":
-        pass
+        # Load an existing network
+        network = FacialRecognitionNetwork()
+        network.load_state_dict(torch.load(get_model_path(save=False)), strict=False)
+
+        train_sequence(network)
+        print("Do you want to validate the network? (y/n)")
+        if input(">>> ") == "y":
+            test_sequence(network)
+
     elif chosen == "load_test":
         # Load a network
         network = FacialRecognitionNetwork()
