@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from data_loader import load_samples
+from data_loader import load_samples, EMOTION
 
 # Make sure the gpu is connected
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -99,11 +99,9 @@ class FacialRecognitionNetwork(nn.Module):
 
             confusion_matrix[predicted][target] += 1
         
-        print(f"Validation Accuracy: {correct/total*100:.2f}%")
-        # Show the confusion matrix
-        print("Confusion matrix:")
-        print(confusion_matrix)
-
+        print(f"Accuracy: {correct/total*100:.2f}%")
+        # Print the confusion matrix
+        print_confusion_matrix(confusion_matrix)
 
 def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limit = None):
     # Load the training data
@@ -126,8 +124,29 @@ def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limi
     for i in range(num_batches):
         batches.append((tensor[i*batch_size:(i+1)*batch_size], emotion[i*batch_size:(i+1)*batch_size]))
     return batches
-    
+
+def print_confusion_matrix(cm: np.ndarray):
+    SHORTER = list(map(lambda x: x.lower()[0:3], EMOTION))
+    header = ' ' + '  '.join(SHORTER) + ' '
+    print("     " + 'Actual'.center(len(header)))
+    print("     " + header)
+    for i, head in enumerate(SHORTER):
+        print(head + ' ', end='')
         
+        # total = np.sum(cm[i])
+        for el in cm[i]:
+            # if total == 0:
+            #     intensity = 0
+            # else:
+            #     ratio = np.sqrt(el / total)
+            #     intensity = int(ratio * 255)
 
+            # rgb_bg = (intensity, 0, intensity // 3)
+            # rgb_fg = (255 - intensity, 255, 255)
 
+            # bg_ansi = f'\x1b[48;2;{rgb_bg[0]};{rgb_bg[1]};{rgb_bg[2]}m'
+            # fg_ansi = f'\x1b[38;2;{rgb_fg[0]};{rgb_fg[1]};{rgb_fg[2]}m'
 
+            # print(bg_ansi + fg_ansi + str(el).rjust(5), end='\033[0m')
+            print(str(el).rjust(5), end='')
+        print()

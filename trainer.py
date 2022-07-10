@@ -3,6 +3,8 @@ import glob
 import datetime
 from typing import Any
 
+import torch
+
 from data_loader import load_samples
 from neural_net import FacialRecognitionNetwork, prepare_training_data
 
@@ -69,15 +71,40 @@ def try_get_model_time(model: str):
     except:
         return "???"
 
-def get_save_destination(default: str = "model.pt"):
+def get_model_path(save: bool, default: str = "model.pt"):
     """
     Prompts the user to choose a save destination.
     """
     options = { f"{x}": f"[{try_get_model_time(x)}] {x}" for x in list_dir("models", "*.pt") }
     options[default] = f"[{try_get_model_time(default)}] {default} (default)"
 
-    print("Enter the path to the save destination (or select one of the following):")
+    if save:
+        print("Enter the path to the save destination (or select one of the following):")
+    else:
+        print("Enter the path to the model (or select one of the following):")
+
     return 'models/' + (choose_option(options, allow_invalid=True) or default)
+
+def train_sequence(network):
+    # Ask for the training data
+    training_data_file = get_samples_file()
+
+    # Choose the save destination
+    save_dest = get_model_path(save=True)
+
+    # Ask for the batch size
+    batch_size = try_int(input("Enter the batch size (default 1000): "), 1000)
+    # Ask for the epochs
+    epochs = try_int(input("Enter the number of epochs (default 10): "), 10)
+    # Ask for the learning rate
+    learning_rate = try_int(input("Enter the learning rate (default 0.001): "), 0.001)
+
+    # Load the training data
+    training_data = prepare_training_data(training_data_file, batch_size)
+            
+    # Train the network
+    network.train(training_data, save_dest, epochs, learning_rate)
+    print("Training complete.")
 
 def test_sequence(network, default: str = "fer2013_valid.samples"):
     # Ask for the validation set
@@ -91,49 +118,36 @@ def test_sequence(network, default: str = "fer2013_valid.samples"):
 
 
 
+
 def main():
     print("Choose an option:")
-    chosen = "new_train"
-    # chosen = choose_option({
-    #     "new_train": "Train a new network",
-    #     "load_train": "Load a network and train it",
-    #     "load_test": "Load a network and test it",
-    #     "exit": "Exit"
-    # })
+    chosen = choose_option({
+        "new_train": "Train a new network",
+        "load_train": "Load a network and train it",
+        "load_test": "Load a network and test it",
+        "exit": "Exit"
+    })
 
     if chosen == "new_train":
         # Create an empty network
         network = FacialRecognitionNetwork()
-
-        # Ask for the training data
-        training_data_file = get_samples_file()
-
-        # Choose the save destination
-        save_dest = get_save_destination()
-
-        # Ask for the batch size
-        batch_size = try_int(input("Enter the batch size (default 1000): "), 1000)
-        # Ask for the epochs
-        epochs = try_int(input("Enter the number of epochs (default 10): "), 10)
-        # Ask for the learning rate
-        learning_rate = try_int(input("Enter the learning rate (default 0.001): "), 0.001)
-
-        # Load the training data
-        training_data = prepare_training_data(training_data_file, batch_size)
-                
-        # Train the network
-        network.train(training_data, save_dest, epochs, learning_rate)
-        print("Training complete.")
+        train_sequence(network)
 
         print("Do you want to validate the network? (y/n)")
         if input(">>> ") == "y":
             test_sequence(network)
-        
 
     elif chosen == "load_train":
         pass
     elif chosen == "load_test":
-        pass
+        # Load a network
+        network = FacialRecognitionNetwork()
+        network.load_state_dict(torch.load(get_model_path(save=False)), strict=False)
+
+        # Test the network
+        test_sequence(network)
+
+
     elif chosen == "exit":
         return
 
