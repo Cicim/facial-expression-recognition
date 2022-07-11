@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torchvision.models import vgg19, VGG19_Weights
 
 from data_loader import load_samples, EMOTION
 
@@ -18,50 +19,62 @@ class FacialRecognitionNetwork(nn.Module):
     def __init__(self):
         super().__init__()
 
+
         # Input size: 1x48x48
-        # Convolutional layers
         self.convolutional = nn.Sequential(
-            nn.Conv2d(1, 6, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(6, 12, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            # nn.BatchNorm2d(num_features=16),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(),
-            nn.Conv2d(12, 24, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(24, 48, kernel_size=3),
-            nn.ReLU(inplace=True),
-            # nn.BatchNorm2d(num_features=64),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Dropout(),
+            nn.Conv2d(128, 256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(256, 512, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(512, 256, kernel_size=3, padding=1),
+            nn.ReLU(),
             nn.Flatten(),
         )
 
-        # Linear layers
         self.linear = nn.Sequential(
-            nn.Linear(121*48, 1024),
+            nn.Linear(9216, 3600),
             nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(1024, 1024),
+            nn.Linear(3600, 3600),
             nn.ReLU(),
-            nn.Linear(1024, 7)
+            nn.Linear(3600, 440),
+            nn.ReLU(),
+            nn.Linear(440, 7)
         )
-
 
     def forward(self, x):
         x = self.convolutional(x)
         x = self.linear(x)
         return x
 
-    def train(self, training_data, save_dest: str = "model.pt", epochs: int = 10, learning_rate: float = 0.001):
+    def train(self, training_data_with_desc, save_dest: str = "model.pt", 
+              epochs: int = 10, learning_rate: float = 0.001, test=False):
         network = self.to(device)
 
         # Create the optimizer
-        optimizer = optim.Adam(network.parameters(), lr=0.001)
+        optimizer = optim.Adam(network.parameters(), lr=learning_rate)
 
         # Create the loss function
         loss_function = nn.CrossEntropyLoss()
+
+        training_data, num_samples, batch_size = training_data_with_desc
+
+        if test:
+            testing_data = load_samples('datasets/fer2013_valid.samples', limit=100)
 
         # Train the model
         for epoch in range(epochs):
@@ -69,39 +82,60 @@ class FacialRecognitionNetwork(nn.Module):
             for i, (data, target) in enumerate(training_data):
                 data = data.to(device)
                 target = target.to(device)
+                # Triple the channels
                 optimizer.zero_grad()
                 output = network(data)
                 loss = loss_function(output, target)
                 loss.backward()
                 optimizer.step()
-                print(f"Batch {i} -> Loss: {loss}")
+                print(f"\r\33[2K\r[{i * batch_size:5}/{num_samples}] Loss: {loss:.3f}", end='')
+            # Validate with the validation set
+            if test:
+                accuracy = self.test(testing_data, print_to_screen=False)
+                print(f"\r\33[2K\r[{num_samples:5}/{num_samples}] Loss: {loss:.3f} Validation Accuracy: {accuracy:.2f}")
+
             torch.save(network.state_dict(), save_dest)
 
 
 
-    def test(self, validation_data):
+    def test(self, validation_data, print_to_screen: bool = True):
         network = self.to(device)
         # Test the model for validation
         correct = 0
         total = 0
 
-        confusion_matrix = np.zeros((7, 7), dtype=np.int32)
+        if print_to_screen:
+            confusion_matrix = np.zeros((7, 7), dtype=np.int32)
 
-        print("Validating model...")
-        for data, target in tqdm(zip(*validation_data), total=len(validation_data[0])):
-            data = data.view(-1, 1, 48, 48).to(device)
-            output = network(data)
-            # Get the highest index in the output
-            _, predicted = torch.max(output.data, 1)
+            print("Validating model...")
+            for data, target in tqdm(zip(*validation_data), total=len(validation_data[0])):
+                data = data.view(-1, 1, 48, 48)
+                data = data.to(device)
+                output = network(data)
+                # Get the highest index in the output
+                _, predicted = torch.max(output.data, 1)
 
-            total += 1
-            correct += int(predicted == target)
+                total += 1
+                correct += int(predicted == target)
 
-            confusion_matrix[predicted][target] += 1
-        
-        print(f"Accuracy: {correct/total*100:.2f}%")
-        # Print the confusion matrix
-        print_confusion_matrix(confusion_matrix)
+                confusion_matrix[predicted][target] += 1
+            
+            print(f"Accuracy: {correct/total*100:.2f}%")
+            # Print the confusion matrix
+            print_confusion_matrix(confusion_matrix)
+
+        else:
+            for data, target in zip(*validation_data):
+                data = data.view(-1, 1, 48, 48)
+                data = data.to(device)
+                output = network(data)
+                # Get the highest index in the output
+                _, predicted = torch.max(output.data, 1)
+
+                total += 1
+                correct += int(predicted == target)
+
+            return correct / total
 
 def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limit = None):
     # Load the training data
@@ -123,7 +157,7 @@ def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limi
     batches = []
     for i in range(num_batches):
         batches.append((tensor[i*batch_size:(i+1)*batch_size], emotion[i*batch_size:(i+1)*batch_size]))
-    return batches
+    return batches, num_samples, batch_size
 
 def print_confusion_matrix(cm: np.ndarray):
     SHORTER = list(map(lambda x: x.lower()[0:3], EMOTION))

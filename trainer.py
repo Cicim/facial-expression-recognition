@@ -99,11 +99,14 @@ def train_sequence(network):
     # Ask for the learning rate
     learning_rate = try_int(input("Enter the learning rate (default 0.001): "), 0.001)
 
+    print("Would you like to show validation accuracy during training? (y/n)")
+    show_validation_accuracy = input(">>> ") == "y"
+
     # Load the training data
     training_data = prepare_training_data(training_data_file, batch_size)
             
     # Train the network
-    network.train(training_data, save_dest, epochs, learning_rate)
+    network.train(training_data, save_dest, epochs, learning_rate, show_validation_accuracy)
     print("Training complete.")
 
 def test_sequence(network, default: str = "fer2013_valid.samples"):

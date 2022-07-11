@@ -123,7 +123,8 @@ def load_samples(samples_file: str, limit: int = None):
     for i, (sample, label) in tqdm(enumerate(samples), total=num_samples):
         if i == limit:
             break
-        tensor[i] = sample
+        # Normalize the sample with mean 0.5077 and std 0.2550
+        tensor[i] = sample.sub(0.5077).div(0.2550)
         labels[i] = label
 
     return tensor, labels
