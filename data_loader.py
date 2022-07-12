@@ -1,33 +1,15 @@
 # Data loaded contains a collection of utilties for transforming samples
 # from different sources into the same format as the FER2013 dataset.
 # All samples will be stored in a custom .samples file.
+from helpers import TimeIt, EMOTION
 
-from time import perf_counter
 import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
-EMOTION = ['Anger', 'Disgust', 'Fear', 'Happiness',
-           'Sadness', 'Surprise', 'Neutrality']
 
-
-class TimeIt:
-    """
-    Context manager for timing code.
-    """
-
-    def __init__(self, message: str):
-        self.message = message
-        self.start_time = perf_counter()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        print(f'[{perf_counter() - self.start_time:8.2f}s] {self.message}')
-        return False
 
 
 def convert_fer2013_dataset(filename='datasets/fer2013.csv'):
