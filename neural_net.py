@@ -1,4 +1,5 @@
 # This is the file containing the neural network structure
+from cmath import e
 from time import perf_counter
 
 import numpy as np
@@ -6,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
+from tqdm import tqdm
 
 from helpers import EMOTIONS, clear_line
 
@@ -15,6 +17,15 @@ class NeuralNet(nn.Module):
     Class for everything needed in every model of the neural network
     """
     loss_function: nn.CrossEntropyLoss
+
+    @classmethod
+    def load(cls, path: str):
+        """
+        Loads a model from a file
+        """
+        model = cls()
+        model.load_state_dict(torch.load(path))
+        return model
 
 class EpochStats():
     """
@@ -31,17 +42,16 @@ class EpochStats():
 
     @property
     def training_loss(self):
-        return sum(self.training_loss_per_batch) / len(self.training_loss_per_batch)
+        return np.mean(self.training_loss_per_batch)
     
     @property
     def training_accuracy(self):
-        return sum(self.training_accuracy_per_batch) / len(self.training_accuracy_per_batch)
+        return np.mean(self.training_accuracy_per_batch)
 
     def __str__(self):
         val_acc = self.validation_accuracy * 100
         tr_acc = self.training_accuracy * 100
         return f"Epoch {self.epoch:3} [{self.time:5.0f}s]: train_loss: {self.training_loss:.4f}, train_acc: {tr_acc:.1f}%, val_loss: {self.validation_loss:.4f}, val_acc: {val_acc:.1f}%"
-
 
 ## Training methods
 def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
@@ -50,12 +60,12 @@ def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
     """
     max_output = torch.argmax(output, dim=1)
     max_target = torch.argmax(target, dim=1)
-    correct = torch.sum(max_output == max_target).item()
-    return correct / len(target)
+    correct = sum(max_output == max_target).item()
+    return correct / target.shape[0]
 
 def train(network: NeuralNet, training_data: TensorDataset, validation_data: TensorDataset, 
           model_save_path: str = None, epochs: int = 50, batch_size: int = 256, learning_rate: float = 0.001,
-          print_to_screen: bool = True):
+          print_to_screen: bool = True) -> list[EpochStats]:
     """
     Trains the `network` on the `training_data` and validates on the `validation_data`.
     Saves the results to `model_save_path` for each epoch if given.
@@ -79,77 +89,90 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
     # Create a list of epoch stats
     epoch_stats: list[EpochStats] = []
 
-    # Training loop
-    for epoch in range(epochs):
-        # Start the timer
-        start = perf_counter()
+    try:
+        # Training loop
+        for epoch in range(epochs):
+            # Start the timer
+            start = perf_counter()
 
-        # Create the data loader for the training data
-        training_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True, drop_last=True)
+            # Create the data loader for the training data
+            training_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True, drop_last=True)
 
-        # Create an epoch stat object
-        epoch_stat = EpochStats(epoch)
-        epoch_stats.append(epoch_stat)
+            # Create an epoch stat object
+            epoch_stat = EpochStats(epoch)
+            epoch_stats.append(epoch_stat)
 
-        # Train the model
-        for batch, (x, d) in enumerate(training_loader):
-            # Move the data to the GPU
-            x = x.to(device)
-            d = d.to(device)
-
-            optimizer.zero_grad()
-            # Forward pass
-            y = network(x)
-            # Calculate the loss
-            loss = loss_fn(y, d)
-            # Backward pass
-            loss.backward()
-            # Update the weights
-            optimizer.step()
-
-            # Save the loss for plotting
-            loss_avg = loss.item()
-            # Calculate the training accuracy for plotting
-            training_accuracy = compute_accuracy(y, d)
-
-            # Save the loss and accuracy for this batch
-            epoch_stat.training_loss_per_batch.append(loss_avg)
-            epoch_stat.training_accuracy_per_batch.append(training_accuracy)
-
-            # Show the loss and accuracy for this batch
-            if print_to_screen:
-                clear_line()
-                print(f"Epoch {epoch+1:3}/{epochs} | Batch {batch:4}/{len(training_loader)} | Loss: {loss_avg:.4f} | Accuracy: {training_accuracy*100:.1f}%", end='')
-
-        # Create the data loader for the validation data
-        validation_loader = DataLoader(validation_data, batch_size=batch_size, shuffle=True, drop_last=True)
-        # Calculate the validation loss and accuracy
-        val_loss = 0
-        val_acc = 0
-        with torch.no_grad():
-            for x, d in validation_loader:
+            # Train the model
+            for batch, (x, d) in enumerate(training_loader):
+                # Move the data to the GPU
                 x = x.to(device)
                 d = d.to(device)
+
+                optimizer.zero_grad()
+                # Forward pass
                 y = network(x)
+                # Calculate the loss
                 loss = loss_fn(y, d)
-                val_loss += loss.item()
-                val_acc += compute_accuracy(y, d)
-        epoch_stat.validation_loss = val_loss / len(validation_loader)
-        epoch_stat.validation_accuracy = val_acc / len(validation_loader)
+                # Backward pass
+                loss.backward()
+                # Update the weights
+                optimizer.step()
 
-        # Save the model to file
-        if model_save_path is not None:
-            torch.save(network.state_dict(), model_save_path)
+                # Save the loss for plotting
+                loss_avg = loss.item()
+                # Calculate the training accuracy for plotting
+                training_accuracy = compute_accuracy(y, d)
 
-        # Stop the timer
-        epoch_stat.time = perf_counter() - start
+                # Save the loss and accuracy for this batch
+                epoch_stat.training_loss_per_batch.append(loss_avg)
+                epoch_stat.training_accuracy_per_batch.append(training_accuracy)
 
-        # Show the epochs stats
-        if print_to_screen:
-            clear_line()
-            print(epoch_stat)
+                # Show the loss and accuracy for this batch
+                if print_to_screen:
+                    clear_line()
+                    print(f"Epoch {epoch+1:3}/{epochs} | Batch {batch:4}/{len(training_loader)} | Loss: {loss_avg:.4f} | Accuracy: {training_accuracy*100:.1f}%", end='')
 
-    print(f"Network trained in {perf_counter() - training_start_time} seconds")
+            # Create the data loader for the validation data
+            validation_loader = DataLoader(validation_data, batch_size=batch_size)
+            # Calculate the validation loss and accuracy
+            val_losses = []
+            val_accuracies = []
+            with torch.no_grad():
+                for x, d in validation_loader:
+                    x = x.to(device)
+                    d = d.to(device)
+                    y = network(x)
+                    loss = loss_fn(y, d)
+                    val_losses.append(loss.item())
+                    val_accuracies.append(compute_accuracy(y, d))
+            epoch_stat.validation_loss = np.mean(val_losses)
+            epoch_stat.validation_accuracy = np.mean(val_accuracies)
+
+            # Save the model to file
+            if model_save_path is not None:
+                # Split the path into the filename and extension
+                filename, extension = model_save_path.split(".")
+                # Add the validation accuracy as an integer to the filename
+                filename += f"_{int(epoch_stat.validation_accuracy * 100):03}"
+                # Add the extension back to the filename
+                filename += f".{extension}"
+                
+                torch.save(network.state_dict(), filename)
+
+            # Stop the timer
+            epoch_stat.time = perf_counter() - start
+
+            # Show the epochs stats
+            if print_to_screen:
+                clear_line()
+                print(epoch_stat)
+
+        print(f"Network trained in {perf_counter() - training_start_time:.2f} seconds")
+
+        return epoch_stats
+    except KeyboardInterrupt:
+        print("\nTraining interrupted.")
+        return epoch_stats
 
 
 def print_confusion_matrix(cm: np.ndarray):
@@ -186,7 +209,7 @@ def print_confusion_matrix(cm: np.ndarray):
         print(str(np.sum(cm[:, i])).rjust(5), end='')
     print()
 
-def test(network: NeuralNet, validation_data: TensorDataset, print_to_screen: bool = True):
+def test(network: NeuralNet, validation_data: TensorDataset, batch_size: int = 1):
     """
     Tests the `network` on the `validation_data`.
     """
@@ -196,17 +219,17 @@ def test(network: NeuralNet, validation_data: TensorDataset, print_to_screen: bo
     network = network.to(device)
 
     # Create the data loader for the validation data
-    validation_loader = DataLoader(validation_data, batch_size=1, shuffle=True)
+    validation_loader = DataLoader(validation_data, batch_size=batch_size, drop_last=False, shuffle=False, pin_memory=True)
 
     # Create the confusion matrix
     cm = np.zeros((len(EMOTIONS), len(EMOTIONS)), dtype=np.int64)
 
     correct_sum = 0
     loss_sum = 0
-
+    total = 0
     with torch.no_grad():
         # For each element in the validation data
-        for x, d in validation_loader:
+        for x, d in tqdm(validation_loader):
             # Move the data to the GPU
             x = x.to(device)
             d = d.to(device)
@@ -216,21 +239,25 @@ def test(network: NeuralNet, validation_data: TensorDataset, print_to_screen: bo
             loss = network.loss_function(y, d)
             
             # Get the predicted emotions of y and d
-            y_emotion = torch.argmax(y[0], dim=0).item()
-            d_emotion = torch.argmax(d[0], dim=0).item()
-            # Check if the prediction is correct
-            correct_sum += int(y_emotion == d_emotion)
+            y_emotions = torch.argmax(y, dim=1)
+            d_emotions = torch.argmax(d, dim=1)
 
-            # Add the loss to the loss sum
-            loss_sum += loss.item()
+            # For each emotion in the predicted emotions
+            for ye, de in zip(y_emotions, d_emotions):
+                # Add 1 to the confusion matrix
+                cm[ye][de] += 1
+                # If the predicted emotion is the same as the actual emotion
+                if ye == de:
+                    # Add 1 to the correct sum
+                    correct_sum += 1
+                # Add the loss to the loss sum
+                loss_sum += loss.item()
+                total += 1
 
-            # Add 1 to the confusion matrix at the correct indices
-            cm[d_emotion, y_emotion] += 1
-
-    accuracy = correct_sum / len(validation_data)
-    loss = loss_sum / len(validation_data)
+    print(correct_sum, total)
+    accuracy = correct_sum / total
+    loss = loss_sum / total
 
     print(f"Accuracy: {accuracy*100:.1f}%")
     print(f"Loss: {loss:.4f}")
-    print_confusion_matrix(cm)
-        
+    # print_confusion_matrix(cm)

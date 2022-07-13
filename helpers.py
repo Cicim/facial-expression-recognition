@@ -55,3 +55,9 @@ def clear_line():
     # Clear the line with the ANSI code
     print("\r\033[K\r", end='')
     sys.stdout.flush()
+
+def print_error(*args, **kwargs):
+    print("\033[31m", end='')
+    print(*args, **kwargs)
+    print("\033[0m", end='')
+
