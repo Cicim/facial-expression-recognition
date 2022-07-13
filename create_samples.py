@@ -72,7 +72,7 @@ with TimeIt('Read the correct labels from the file'):
             non_null_labels += 1
 
 print(f"Predicted emotions distribution over {non_null_labels} faces:")
-for i, emotion in enumerate(EMOTION):
+for i, emotion in enumerate(EMOTIONS):
     c = correct_labels.count(i)
     print(f"{emotion:11}: {c:10} ({c/non_null_labels*100:5.2f}%)")
 

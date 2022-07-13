@@ -1,166 +1,162 @@
 # This is the file containing the neural network structure
-from tqdm import tqdm
-import numpy as np
+from time import perf_counter
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchvision.models import vgg19, VGG19_Weights
+from torch.utils.data import TensorDataset, DataLoader
 
-from data_loader import load_samples, EMOTION
+from helpers import EMOTIONS, clear_line
 
-# Make sure the gpu is connected
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-device_name = device.type == 'cuda' and f'GPU ({torch.cuda.get_device_name(0)})' or 'CPU'
-torch.cuda.empty_cache()
-print(f"Running on {device_name}")
+## Classes
+class NeuralNet(nn.Module):
+    """
+    Class for everything needed in every model of the neural network
+    """
+    loss_function: nn.CrossEntropyLoss
 
-class FacialRecognitionNetwork(nn.Module):
-    def __init__(self):
-        super().__init__()
+class EpochStats():
+    """
+    Collection of statistics for an epoch of training.
+    """
+    def __init__(self, epoch: int):
+        self.epoch = epoch + 1
+        self.time = 0.0
+
+        self.training_loss_per_batch: list[float] = []
+        self.training_accuracy_per_batch: list[float] = []
+        self.validation_loss = 0.0
+        self.validation_accuracy = 0.0
+
+    @property
+    def training_loss(self):
+        return sum(self.training_loss_per_batch) / len(self.training_loss_per_batch)
+    
+    @property
+    def training_accuracy(self):
+        return sum(self.training_accuracy_per_batch) / len(self.training_accuracy_per_batch)
+
+    def __str__(self):
+        val_acc = self.validation_accuracy * 100
+        tr_acc = self.training_accuracy * 100
+        return f"Epoch {self.epoch:3} [{self.time:5.0f}s]: train_loss: {self.training_loss:.4f}, train_acc: {tr_acc:.1f}%, val_loss: {self.validation_loss:.4f}, val_acc: {val_acc:.1f}%"
 
 
-        # Input size: 1x48x48
-        self.convolutional = nn.Sequential(
-            nn.Conv2d(1, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(128, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(256, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(256, 512, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Conv2d(512, 256, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.Flatten(),
-        )
+## Training methods
+def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
+    """
+    Returns the accuracy of the model on the given outputs.
+    """
+    max_output = torch.argmax(output, dim=1)
+    max_target = torch.argmax(target, dim=1)
+    correct = torch.sum(max_output == max_target).item()
+    return correct / len(target)
 
-        self.linear = nn.Sequential(
-            nn.Linear(9216, 3600),
-            nn.ReLU(),
-            nn.Linear(3600, 3600),
-            nn.ReLU(),
-            nn.Linear(3600, 440),
-            nn.ReLU(),
-            nn.Linear(440, 7)
-        )
+def train(network: NeuralNet, training_data: TensorDataset, validation_data: TensorDataset, 
+          model_save_path: str = None, epochs: int = 50, batch_size: int = 256, learning_rate: float = 0.001,
+          print_to_screen: bool = True):
+    """
+    Trains the `network` on the `training_data` and validates on the `validation_data`.
+    Saves the results to `model_save_path` for each epoch if given.
+    """
+    # Get the GPU
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Training network on {device}")
 
-    def forward(self, x):
-        x = self.convolutional(x)
-        x = self.linear(x)
-        return x
+    training_start_time = perf_counter()
 
-    def train(self, training_data_with_desc, save_dest: str = "model.pt", 
-              epochs: int = 10, learning_rate: float = 0.001, test=False):
-        network = self.to(device)
+    # Copy the network to the GPU
+    network = network.to(device)
 
-        # Create the optimizer
-        optimizer = optim.Adam(network.parameters(), lr=learning_rate)
+    # Get the optimizer
+    optimizer = optim.Adam(network.parameters(), lr=learning_rate)
+    # TODO: add a scheduler
 
-        # Create the loss function
-        loss_function = nn.CrossEntropyLoss()
+    # Get the loss function
+    loss_fn = network.loss_function
 
-        training_data, num_samples, batch_size = training_data_with_desc
+    # Create a list of epoch stats
+    epoch_stats: list[EpochStats] = []
 
-        if test:
-            testing_data = load_samples('datasets/fer2013_valid.samples', limit=100)
+    # Training loop
+    for epoch in range(epochs):
+        # Start the timer
+        start = perf_counter()
+
+        # Create the data loader for the training data
+        training_loader = DataLoader(training_data, batch_size=batch_size, shuffle=True, drop_last=True)
+
+        # Create an epoch stat object
+        epoch_stat = EpochStats(epoch)
+        epoch_stats.append(epoch_stat)
 
         # Train the model
-        for epoch in range(epochs):
-            print(f"Epoch {epoch}/{epochs}")
-            for i, (data, target) in enumerate(training_data):
-                data = data.to(device)
-                target = target.to(device)
-                # Triple the channels
-                optimizer.zero_grad()
-                output = network(data)
-                loss = loss_function(output, target)
-                loss.backward()
-                optimizer.step()
-                print(f"\r\33[2K\r[{i * batch_size:5}/{num_samples}] Loss: {loss:.3f}", end='')
-            # Validate with the validation set
-            if test:
-                accuracy = self.test(testing_data, print_to_screen=False)
-                print(f"\r\33[2K\r[{num_samples:5}/{num_samples}] Loss: {loss:.3f} Validation Accuracy: {accuracy:.2f}")
+        for batch, (x, d) in enumerate(training_loader):
+            # Move the data to the GPU
+            x = x.to(device)
+            d = d.to(device)
 
-            torch.save(network.state_dict(), save_dest)
+            optimizer.zero_grad()
+            # Forward pass
+            y = network(x)
+            # Calculate the loss
+            loss = loss_fn(y, d)
+            # Backward pass
+            loss.backward()
+            # Update the weights
+            optimizer.step()
 
+            # Save the loss for plotting
+            loss_avg = loss.item()
+            # Calculate the training accuracy for plotting
+            training_accuracy = compute_accuracy(y, d)
 
+            # Save the loss and accuracy for this batch
+            epoch_stat.training_loss_per_batch.append(loss_avg)
+            epoch_stat.training_accuracy_per_batch.append(training_accuracy)
 
-    def test(self, validation_data, print_to_screen: bool = True):
-        network = self.to(device)
-        # Test the model for validation
-        correct = 0
-        total = 0
+            # Show the loss and accuracy for this batch
+            if print_to_screen:
+                clear_line()
+                print(f"Epoch {epoch+1:3}/{epochs} | Batch {batch:4}/{len(training_loader)} | Loss: {loss_avg:.4f} | Accuracy: {training_accuracy*100:.1f}%", end='')
 
+        # Create the data loader for the validation data
+        validation_loader = DataLoader(validation_data, batch_size=batch_size, shuffle=True, drop_last=True)
+        # Calculate the validation loss and accuracy
+        val_loss = 0
+        val_acc = 0
+        with torch.no_grad():
+            for x, d in validation_loader:
+                x = x.to(device)
+                d = d.to(device)
+                y = network(x)
+                loss = loss_fn(y, d)
+                val_loss += loss.item()
+                val_acc += compute_accuracy(y, d)
+        epoch_stat.validation_loss = val_loss / len(validation_loader)
+        epoch_stat.validation_accuracy = val_acc / len(validation_loader)
+
+        # Save the model to file
+        if model_save_path is not None:
+            torch.save(network.state_dict(), model_save_path)
+
+        # Stop the timer
+        epoch_stat.time = perf_counter() - start
+
+        # Show the epochs stats
         if print_to_screen:
-            confusion_matrix = np.zeros((7, 7), dtype=np.int32)
+            clear_line()
+            print(epoch_stat)
 
-            print("Validating model...")
-            for data, target in tqdm(zip(*validation_data), total=len(validation_data[0])):
-                data = data.view(-1, 1, 48, 48)
-                data = data.to(device)
-                output = network(data)
-                # Get the highest index in the output
-                _, predicted = torch.max(output.data, 1)
+    print(f"Network trained in {perf_counter() - training_start_time} seconds")
 
-                total += 1
-                correct += int(predicted == target)
-
-                confusion_matrix[predicted][target] += 1
-            
-            print(f"Accuracy: {correct/total*100:.2f}%")
-            # Print the confusion matrix
-            print_confusion_matrix(confusion_matrix)
-
-        else:
-            for data, target in zip(*validation_data):
-                data = data.view(-1, 1, 48, 48)
-                data = data.to(device)
-                output = network(data)
-                # Get the highest index in the output
-                _, predicted = torch.max(output.data, 1)
-
-                total += 1
-                correct += int(predicted == target)
-
-            return correct / total
-
-def prepare_training_data(samples_file: str, batch_size: int = 2000, sample_limit = None):
-    # Load the training data
-    tensor, int_emotion = load_samples(samples_file, limit=sample_limit)
-
-    num_samples = len(tensor)
-    num_batches = int(np.ceil(num_samples / batch_size))
-
-    # Convert all emotion to a one-hot vector
-    emotion = torch.zeros(len(int_emotion), 7)
-    for i, emotion_index in enumerate(int_emotion):
-        emotion[i][emotion_index] = 1
-
-    # Shuffle the data
-    shuffled_indices = torch.randperm(len(tensor))
-    tensor = tensor[shuffled_indices]
-    emotion = emotion[shuffled_indices]
-
-    batches = []
-    for i in range(num_batches):
-        batches.append((tensor[i*batch_size:(i+1)*batch_size], emotion[i*batch_size:(i+1)*batch_size]))
-    return batches, num_samples, batch_size
 
 def print_confusion_matrix(cm: np.ndarray):
-    SHORTER = list(map(lambda x: x.lower()[0:3], EMOTION))
+    """
+    Prints the confusion matrix of the model.
+    """
+    SHORTER = list(map(lambda x: x.lower()[0:3], EMOTIONS))
     header = ' ' + '  '.join(SHORTER) + '  ptot '
     print("     " + 'Actual'.center(len(header)))
     print("     " + header)
@@ -189,3 +185,52 @@ def print_confusion_matrix(cm: np.ndarray):
     for i, head in enumerate(SHORTER):
         print(str(np.sum(cm[:, i])).rjust(5), end='')
     print()
+
+def test(network: NeuralNet, validation_data: TensorDataset, print_to_screen: bool = True):
+    """
+    Tests the `network` on the `validation_data`.
+    """
+    # Get the GPU
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"Testing network on {device}")
+    network = network.to(device)
+
+    # Create the data loader for the validation data
+    validation_loader = DataLoader(validation_data, batch_size=1, shuffle=True)
+
+    # Create the confusion matrix
+    cm = np.zeros((len(EMOTIONS), len(EMOTIONS)), dtype=np.int64)
+
+    correct_sum = 0
+    loss_sum = 0
+
+    with torch.no_grad():
+        # For each element in the validation data
+        for x, d in validation_loader:
+            # Move the data to the GPU
+            x = x.to(device)
+            d = d.to(device)
+            # Forward pass
+            y = network(x)
+            # Calculate the loss
+            loss = network.loss_function(y, d)
+            
+            # Get the predicted emotions of y and d
+            y_emotion = torch.argmax(y[0], dim=0).item()
+            d_emotion = torch.argmax(d[0], dim=0).item()
+            # Check if the prediction is correct
+            correct_sum += int(y_emotion == d_emotion)
+
+            # Add the loss to the loss sum
+            loss_sum += loss.item()
+
+            # Add 1 to the confusion matrix at the correct indices
+            cm[d_emotion, y_emotion] += 1
+
+    accuracy = correct_sum / len(validation_data)
+    loss = loss_sum / len(validation_data)
+
+    print(f"Accuracy: {accuracy*100:.1f}%")
+    print(f"Loss: {loss:.4f}")
+    print_confusion_matrix(cm)
+        

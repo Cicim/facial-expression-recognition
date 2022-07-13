@@ -158,8 +158,8 @@ print("Size in memory of the good faces:", sizeof_fmt(getsize(good_faces)))
 predictions = []
 with TimeIt('Faces classified'):
     # 4.1 Load the model
-    from neural_net import FacialRecognitionNetwork
-    model = FacialRecognitionNetwork()
+    from neural_net import CNNFER1
+    model = CNNFER1()
     model.load_state_dict(torch.load('models/convo.pt'))
     model = model.to(device)
 
@@ -195,7 +195,7 @@ with TimeIt('Faces classified'):
         f.write('export const data = ')
         f.write(json.dumps(predictions, separators=(',', ':')))
 print(f"Predicted emotions distribution over {len(predictions)} faces:")
-for i, emotion in enumerate(EMOTION):
+for i, emotion in enumerate(EMOTIONS):
     c = predictions.count(i)
     print(f"{emotion:11}: {c:10} ({c/len(predictions)*100:5.2f}%)")
 

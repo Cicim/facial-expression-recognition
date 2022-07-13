@@ -2,9 +2,8 @@ import sys
 from time import perf_counter
 from types import ModuleType, FunctionType
 from gc import get_referents
-from PIL import Image
 
-EMOTION = ['Anger', 'Disgust', 'Fear', 'Happiness',
+EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happiness',
            'Sadness', 'Surprise', 'Neutrality']
 
 def getsize(obj):
@@ -51,3 +50,8 @@ def sizeof_fmt(num, suffix="B"):
             return f"{num:3.1f}{unit}{suffix}"
         num /= 1024.0
     return f"{num:.1f}Yi{suffix}"
+
+def clear_line():
+    # Clear the line with the ANSI code
+    print("\r\033[K\r", end='')
+    sys.stdout.flush()

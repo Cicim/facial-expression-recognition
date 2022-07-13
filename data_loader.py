@@ -1,7 +1,7 @@
 # Data loaded contains a collection of utilties for transforming samples
 # from different sources into the same format as the FER2013 dataset.
 # All samples will be stored in a custom .samples file.
-from helpers import TimeIt, EMOTION
+from helpers import TimeIt, EMOTIONS
 
 import torch
 import numpy as np
@@ -9,9 +9,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+from torch.utils.data import TensorDataset, DataLoader
 
-
-
+## Dataset creation
 def convert_fer2013_dataset(filename='datasets/fer2013.csv'):
     """
     Convert the FER2013 dataset to a pandas dataframe.
@@ -56,78 +56,144 @@ def convert_fer2013_dataset(filename='datasets/fer2013.csv'):
                 f.write(row.pixels + row.emotion)
 
 
-def load_samples_generator(samples_file: str):
+## Dataset loading
+NORMALIZATION_MEAN = 0.5077
+NORMALIZATION_STD = 0.255
+
+def transform_sample(image: bytes, label: bytes) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Loads samples from a file.
+    Transforms the image and label bytearrays into Tensors.
     """
+
+    # Convert the bytes to a 48x48 float32 numpy array
+    nparray = np.frombuffer(image, dtype=np.uint8, count=48*48)
+    nparray = np.reshape(nparray, (48, 48))
+    nparray = nparray.astype(np.float32) / 255
+    # Then to a tensor
+    tensor = torch.from_numpy(nparray).unsqueeze(0)
+
+    # Read the label as an integer
+    label = int.from_bytes(label, 'big')
+    # Convert the label to a one-hot tensor of size len(EMOTIONS)
+    target = torch.zeros(len(EMOTIONS))
+    target[label] = 1
+
+    # NOTE These are additional steps to make the dataset compatible with a
+    #      specific neural network, and may change in the future.
+    # Delete the external 4 pixel wide border
+    tensor = tensor[:, 4:-4, 4:-4]
+    # Normalize the image
+    tensor = tensor.sub(NORMALIZATION_MEAN).div(NORMALIZATION_STD)
+
+    return tensor, target
+    
+def load_dataset(samples_file: str, limit: int = None):
+    """
+    Create a samples dataset from a .samples file.
+    `limit` limits the numer of samples to load.
+    """
+    if limit is None:
+        limit = np.inf
+
     try:
+        inputs = []
+        targets = []
+
         with open(samples_file, 'rb') as f:
             # Read the first 4 bytes to get the number of samples
             num_samples = int.from_bytes(f.read(4), 'little')
-            yield num_samples
 
             # Read each image
-            while True:
+            for _ in tqdm(range(min(num_samples, limit))):
                 # Read the image
                 image = f.read(48 * 48)
-                # Read the label
-                label = int.from_bytes(f.read(1), 'big')
                 # If the image is empty, break
                 if not image:
                     break
+                label = f.read(1)
 
-                # Convert the bytes to a 48x48 float32 numpy array
-                nparray = np.frombuffer(image, dtype=np.uint8, count=48*48)
-                nparray = np.reshape(nparray, (48, 48))
-                nparray = nparray.astype(np.float32) / 255
-
-                # Then to a tensor
-                tensor = torch.from_numpy(nparray).view(1, 48, 48)
-
-                # Convert the image to a numpy array
-                yield tensor, label
+                # Transform the sample
+                input, target = transform_sample(image, label)
+                inputs.append(input)
+                targets.append(target)
 
     except FileNotFoundError:
-        print(f'{samples_file} not found.')
-        return None
+        print(f'Samples file `{samples_file}` not found.')
+        exit(1)
 
-def load_samples(samples_file: str, limit: int = None):
-    # Load the samples
-    samples = load_samples_generator(samples_file)
-    # Get the number of samples
-    num_samples = next(samples) if limit is None else min(next(samples), limit)
-    # Create a tensor to store the samples
-    tensor = torch.zeros(num_samples, 1, 48, 48)
-    # Create a tensor to store the labels
-    labels = torch.zeros(num_samples, dtype=torch.long)
-    # Load the samples
-    print(f"Loading samples from {samples_file}")
-    for i, (sample, label) in tqdm(enumerate(samples), total=num_samples):
-        if i == limit:
-            break
-        # Normalize the sample with mean 0.5077 and std 0.2550
-        tensor[i] = sample.sub(0.5077).div(0.2550)
-        labels[i] = label
+    return TensorDataset(torch.stack(inputs), torch.stack(targets))
 
-    return tensor, labels
-
-def random_samples_plot(tensor: torch.Tensor, labels: torch.Tensor = None):
+def random_samples_plot(dataset: TensorDataset, num_samples: int = 128, cols: int = 16):
     """
-    Randomly sample a subset of the dataset.
+    Plots a random subset of the given tensor
     """
-    # Randomly sample a subset of the dataset
-    indices = torch.randperm(tensor.shape[0])[:128]
+    rows = np.ceil(num_samples / cols).astype(int)
 
-    # Each subplot should be at least 192x192 pixels
-    fig, axs = plt.subplots(8, 16, figsize=(20, 12))
+    # Create a random sample of the dataset
+    samples = DataLoader(dataset, batch_size=None, shuffle=True)
+
+    fig, axs = plt.subplots(rows, cols, figsize=(20, 12))
     # Plot the samples
-    for i in tqdm(range(128)):
-        ax = axs[i // 16, i % 16]
-        # Get the sample
-        sample = tensor[indices[i]]
-        # Get the label
-        if labels is not None:
-            label = labels[indices[i]]
-        ax.imshow(sample.squeeze().numpy(), cmap='gray')
-        ax.set_title(EMOTION[label])
+    for i, (image, target) in tqdm(enumerate(samples)):
+        if i == num_samples:
+            break
+        ax = axs[i // cols, i % cols]
+        # Show the image
+        ax.imshow(image.squeeze().numpy(), cmap='gray')
+        # Add a title with the emotion
+        emotion = torch.argmax(target).item()
+        ax.set_title(EMOTIONS[emotion])
         ax.axis('off')
+
+
+## Dataset combining
+def split_samples(src_path: str, weights: list[float], dest_paths: list[str]):
+    """
+    Splits the given file into multiple files (with the given path).
+    Each file will get a weights percentage of the original file's samples.
+    """
+    # Load the samples in bytes
+    samples = []
+    with open(src_path, 'rb') as f:
+        size = int.from_bytes(f.read(4), 'little')
+        for _ in range(size):
+            samples.append(f.read(48 * 48 + 1))
+    
+    # Create a random permutation
+    indices = torch.randperm(size)
+    # Randomize the sample's order
+    samples = [samples[i] for i in indices]
+
+    # Split the samples into the given files
+    for dest_path, weight in zip(dest_paths, weights):
+        # Get the first % of the samples
+        last_index = int(size * weight)
+        file_samples = samples[:last_index]
+        samples = samples[last_index:]
+
+        # Write the samples to the file
+        with open(dest_path, 'wb') as f:
+            f.write(len(file_samples).to_bytes(4, 'little'))
+            for sample in file_samples:
+                f.write(sample)
+
+def merge_samples(dst_path: str, src_paths: list[str]):
+    """
+    Merge multiple samples files into a single file.
+    """
+    # Open all the source files in binary read mode
+    files = [open(src_path, 'rb') for src_path in src_paths]
+    # Read the first 4 bytes to get the number of samples
+    sizes = [int.from_bytes(f.read(4), 'little') for f in files]
+    # Create a file to write the merged samples
+    with open(dst_path, 'wb') as fw:
+        # Write the number of samples
+        fw.write(sum(sizes).to_bytes(4, 'little'))
+        # Write the samples
+        for size, fr in zip(sizes, files):
+            for _ in range(size):
+                fw.write(fr.read(48*48+1))
+
+    # Close all the files
+    for f in files:
+        f.close()

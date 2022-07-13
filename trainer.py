@@ -6,7 +6,7 @@ from typing import Any
 import torch
 
 from data_loader import load_samples
-from neural_net import FacialRecognitionNetwork, prepare_training_data
+from neural_net import CNNFER1, prepare_training_data
 
 
 ## Utilities
@@ -99,14 +99,12 @@ def train_sequence(network):
     # Ask for the learning rate
     learning_rate = try_int(input("Enter the learning rate (default 0.001): "), 0.001)
 
-    print("Would you like to show validation accuracy during training? (y/n)")
-    show_validation_accuracy = input(">>> ") == "y"
 
     # Load the training data
     training_data = prepare_training_data(training_data_file, batch_size)
             
     # Train the network
-    network.train(training_data, save_dest, epochs, learning_rate, show_validation_accuracy)
+    network.train(training_data, save_dest, epochs, learning_rate)
     print("Training complete.")
 
 def test_sequence(network, default: str = "fer2013_valid.samples"):
@@ -133,7 +131,7 @@ def main():
 
     if chosen == "new_train":
         # Create an empty network
-        network = FacialRecognitionNetwork()
+        network = CNNFER1()
         train_sequence(network)
 
         print("Do you want to validate the network? (y/n)")
@@ -142,7 +140,7 @@ def main():
 
     elif chosen == "load_train":
         # Load an existing network
-        network = FacialRecognitionNetwork()
+        network = CNNFER1()
         network.load_state_dict(torch.load(get_model_path(save=False)), strict=False)
 
         train_sequence(network)
@@ -152,7 +150,7 @@ def main():
 
     elif chosen == "load_test":
         # Load a network
-        network = FacialRecognitionNetwork()
+        network = CNNFER1()
         network.load_state_dict(torch.load(get_model_path(save=False)), strict=False)
 
         # Test the network
