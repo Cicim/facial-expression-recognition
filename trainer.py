@@ -16,6 +16,7 @@ from neural_net import train, test
 neural_nets = {
     'cnn1': CNNFER1,
     'cnn2': CNNFER2,
+    'cnn3': CNNFER3,
 }
 
 DEFAULT_TRAINING_DATA_PATH = "datasets/fer2013_train.samples"
@@ -77,7 +78,6 @@ def main():
         train_loss = [stat.training_loss for stat in stats]
         val_loss = [stat.validation_loss for stat in stats]
         plt.xlabel("Epoch")
-        plt.xticks(epochs)
         plt.ylabel("Loss")
         plt.plot(epochs, train_loss, label="Training loss")
         plt.plot(epochs, val_loss, label="Validation loss")
@@ -90,7 +90,6 @@ def main():
         train_acc = [stat.training_accuracy for stat in stats]
         val_acc = [stat.validation_accuracy for stat in stats]
         plt.xlabel("Epoch")
-        plt.xticks(epochs)
         plt.ylabel("Accuracy")
         plt.plot(epochs, train_acc, label="Training accuracy")
         plt.plot(epochs, val_acc, label="Validation accuracy")

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import cv2
 
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -68,6 +69,18 @@ def transform_sample(image: bytes, label: bytes) -> tuple[torch.Tensor, torch.Te
     # Convert the bytes to a 48x48 float32 numpy array
     nparray = np.frombuffer(image, dtype=np.uint8, count=48*48)
     nparray = np.reshape(nparray, (48, 48))
+
+    # # Normalize the exposure of the image
+    # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(1, 1))
+    # nparray = clahe.apply(nparray)
+
+    # # Detect the edges of the image
+    # nparray = cv2.Canny(nparray, 100, 200)
+
+    # If the image is all black
+    if np.all(nparray == 0):
+        return None, None
+
     nparray = nparray.astype(np.float32) / 255
     # Then to a tensor
     tensor = torch.from_numpy(nparray).unsqueeze(0)
@@ -81,9 +94,9 @@ def transform_sample(image: bytes, label: bytes) -> tuple[torch.Tensor, torch.Te
     # NOTE These are additional steps to make the dataset compatible with a
     #      specific neural network, and may change in the future.
     # Delete the external 4 pixel wide border
-    tensor = tensor[:, 4:-4, 4:-4]
-    # Normalize the image
-    tensor = tensor.sub(NORMALIZATION_MEAN).div(NORMALIZATION_STD)
+    # tensor = tensor[:, 4:-4, 4:-4]
+    # # Normalize the image
+    # tensor = tensor.sub(NORMALIZATION_MEAN).div(NORMALIZATION_STD)
 
     return tensor, target
     
@@ -114,8 +127,9 @@ def load_dataset(samples_file: str, limit: int = None):
 
                 # Transform the sample
                 input, target = transform_sample(image, label)
-                inputs.append(input)
-                targets.append(target)
+                if input is not None and target is not None:
+                    inputs.append(input)
+                    targets.append(target)
 
     except FileNotFoundError:
         print(f'Samples file `{samples_file}` not found.')

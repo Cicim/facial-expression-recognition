@@ -100,7 +100,6 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
 
             # Create an epoch stat object
             epoch_stat = EpochStats(epoch)
-            epoch_stats.append(epoch_stat)
 
             # Train the model
             for batch, (x, d) in enumerate(training_loader):
@@ -161,6 +160,7 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
 
             # Stop the timer
             epoch_stat.time = perf_counter() - start
+            epoch_stats.append(epoch_stat)
 
             # Show the epochs stats
             if print_to_screen:
@@ -171,6 +171,7 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
 
         return epoch_stats
     except KeyboardInterrupt:
+        epoch_stats.append(epoch_stat)
         print("\nTraining interrupted.")
         return epoch_stats
 

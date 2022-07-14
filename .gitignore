@@ -135,4 +135,4 @@ datasets/
 # Model weights
 models/
 
-test.ipynb
+test*.ipynb
