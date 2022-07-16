@@ -8,16 +8,10 @@ import json
 import matplotlib.pyplot as plt
 
 from data_loader import load_dataset
-from fer_nets import *
+from fer_nets import neural_nets
 from helpers import print_error
 from neural_net import train, test
 
-# List of neural network classes to choose from
-neural_nets = {
-    'cnn1': CNNFER1,
-    'cnn2': CNNFER2,
-    'cnn3': CNNFER3,
-}
 
 DEFAULT_TRAINING_DATA_PATH = "datasets/fer2013_train.samples"
 DEFAULT_VALIDATION_DATA_PATH = "datasets/fer2013_valid.samples"

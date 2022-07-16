@@ -1,6 +1,8 @@
 # Data loaded contains a collection of utilties for transforming samples
 # from different sources into the same format as the FER2013 dataset.
 # All samples will be stored in a custom .samples file.
+import random
+
 from helpers import TimeIt, EMOTIONS
 
 import torch
@@ -211,3 +213,102 @@ def merge_samples(dst_path: str, src_paths: list[str]):
     # Close all the files
     for f in files:
         f.close()
+
+## Dataset statistics
+def show_dataset_stats(dataset: TensorDataset):
+    """
+    Get the statistics of the given dataset.
+    """
+    # Get the statistics of the dataset
+    inputs, targets = dataset[:]
+    # Get the mean and std of the inputs
+    mean = inputs.mean()
+    std = inputs.std()
+    # Get the number of samples
+    num_samples = inputs.shape[0]
+    # Get the number of classes
+    num_classes = targets.shape[1]
+    # Get the number of samples per class
+    num_samples_per_class = torch.sum(targets, 0).tolist()
+
+    print(f'Number of samples: {num_samples}')
+    print(f'Number of classes: {num_classes}')
+    print(f'Number of samples per class: {num_samples_per_class}')
+    print(f'Mean: {mean}')
+    print(f'Std: {std}')
+
+
+## Dataset transformations
+def equalize_dataset(dst_path: str, src_path: str, samples_per_class: int, discarded_path: str = None, repeat_samples: bool = True):
+    """
+    Make sure the number of samples for each class is the same
+    """
+    # Read the samples into an array
+    samples: list[tuple[bytes, int]] = []
+    with open(src_path, 'rb') as f:
+        size = int.from_bytes(f.read(4), 'little')
+        for _ in range(size):
+            samples.append((f.read(48 * 48), int.from_bytes(f.read(1), 'little')))
+    
+    # Divide them into targets
+    samples_by_targets: list[list[tuple[bytes, int]]] = [[] for i in range(len(EMOTIONS))]
+    for image, target in samples:
+        samples_by_targets[target].append((image, target))
+
+    # Statistics
+    print("From:")
+    for emotion, samples in enumerate(samples_by_targets):
+        print(f'{EMOTIONS[emotion]:11}: {len(samples):5}')
+
+    discarded_samples: list[tuple[bytes, int]] = []
+
+    # For each emotion, correct the number of samples to reach samples_per_class
+    for emotion, samples in enumerate(samples_by_targets):
+        # Get the number of samples for this emotion
+        num_samples = len(samples)
+        
+        if num_samples > samples_per_class:
+            # Remove some samples
+            new_samples = random.sample(samples, samples_per_class)
+
+            if discarded_path is not None:
+                # Get the samples that are in samples but not in new_samples
+                discarded_samples.extend([s for s in samples if s not in new_samples])
+
+            samples_by_targets[emotion] = new_samples
+        elif repeat_samples:
+            new_samples: list[tuple[bytes, int]] = []
+
+            # Repeat the samples until the number of samples is equal to samples_per_class
+            while len(new_samples) < samples_per_class:
+                # Extract a random sample from samples
+                sample = random.choice(samples)
+                # Add it to the new samples
+                new_samples.append(sample)
+            # Set the new samples
+            samples_by_targets[emotion] = new_samples
+
+    if discarded_path is not None:
+        # Write the discarded samples to the discarded_path
+        with open(discarded_path, 'wb') as f:
+            f.write(len(discarded_samples).to_bytes(4, 'little'))
+            for image, target in discarded_samples:
+                f.write(image)
+                f.write(target.to_bytes(1, 'little'))
+    
+    # Write the new samples to the dst_path
+    with open(dst_path, 'wb') as f:
+        f.write(sum(map(len, samples_by_targets)).to_bytes(4, 'little'))
+        for samples in samples_by_targets:
+            for image, target in samples:
+                f.write(image)
+                f.write(target.to_bytes(1, 'little'))
+
+    
+    # Statistics
+    print("To:")
+    for emotion, samples in enumerate(samples_by_targets):
+        print(f'{EMOTIONS[emotion]:11}: {len(samples):5}')
+        
+
+# equalize_dataset('datasets/equalized_fer.samples', 'datasets/fer2013plus_train.samples', 3000, discarded_path='datasets/equalization_losses.samples', repeat_samples=False)

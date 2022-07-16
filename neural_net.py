@@ -261,4 +261,4 @@ def test(network: NeuralNet, validation_data: TensorDataset, batch_size: int = 1
 
     print(f"Accuracy: {accuracy*100:.1f}%")
     print(f"Loss: {loss:.4f}")
-    # print_confusion_matrix(cm)
+    print_confusion_matrix(cm)

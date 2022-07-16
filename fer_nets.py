@@ -123,3 +123,11 @@ class CNNFER3(NeuralNet):
         x = self.convolutional(x)
         x = self.linear(x)
         return x
+
+
+# List of neural network classes to choose from
+neural_nets = {
+    'cnn1': CNNFER1,
+    'cnn2': CNNFER2,
+    'cnn3': CNNFER3,
+}
