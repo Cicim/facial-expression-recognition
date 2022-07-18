@@ -114,7 +114,8 @@ class CNNFER3(NeuralNet):
             nn.Flatten(),
             nn.Linear(4608, 128),
             nn.LeakyReLU(inplace=True),
-            nn.Linear(128, 7)
+            nn.Linear(128, 7),
+            # nn.Sigmoid(),
         )
 
         self.loss_function = nn.CrossEntropyLoss()
@@ -126,7 +127,7 @@ class CNNFER3(NeuralNet):
 
 
 # List of neural network classes to choose from
-neural_nets = {
+neural_nets: dict[str, NeuralNet] = {
     'cnn1': CNNFER1,
     'cnn2': CNNFER2,
     'cnn3': CNNFER3,

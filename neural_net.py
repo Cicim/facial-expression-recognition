@@ -52,16 +52,17 @@ def find_faces(image: Image.Image):
 
         # Make sure the image is a square
         if w > h:
-            x1 -= (w - h) // 2
-            x2 += (w - h) // 2
+            y1 -= (w - h) // 2
+            y2 += (w - h) // 2
         elif h > w:
-            y1 -= (h - w) // 2
-            y2 += (h - w) // 2
+            x1 -= (h - w) // 2
+            x2 += (h - w) // 2
+        # Print the square ratio
         
         # Get the face
         face = image.crop((x1, y1, x2, y2))
         # Resize the image to 48x48
-        face = face.resize((48, 48), Image.HAMMING)
+        face = face.resize((48, 48), Image.BICUBIC)
         # Convert it to grayscale
         face = face.convert('L')
 
@@ -108,7 +109,7 @@ class NeuralNet(nn.Module):
         # Find the faces in the image
         faces, boxes = find_faces(image)
         if faces is None:
-            return None
+            return None, None
         
         # Convert all faces to tensors
         faces = [torch.from_numpy(np.array(face)).float().unsqueeze(0) for face in faces]
