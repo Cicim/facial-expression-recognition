@@ -93,12 +93,9 @@ def transform_sample(image: bytes, label: bytes) -> tuple[torch.Tensor, torch.Te
     target = torch.zeros(len(EMOTIONS))
     target[label] = 1
 
-    # NOTE These are additional steps to make the dataset compatible with a
-    #      specific neural network, and may change in the future.
-    # Delete the external 4 pixel wide border
-    # tensor = tensor[:, 4:-4, 4:-4]
-    # # Normalize the image
-    # tensor = tensor.sub(NORMALIZATION_MEAN).div(NORMALIZATION_STD)
+    # Randomly flip the image horizontally
+    if random.random() > 0.125:
+        tensor = torch.flip(tensor, [2])
 
     return tensor, target
     

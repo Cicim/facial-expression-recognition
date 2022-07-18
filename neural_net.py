@@ -176,13 +176,21 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"Training network on {device}")
 
+
     training_start_time = perf_counter()
 
     # Copy the network to the GPU
     network = network.to(device)
 
+
+    if print_to_screen:
+        learnable_parameters = sum(param.numel() for param in network.parameters())
+        print(f"The network has {learnable_parameters} learnable parameters")
+
     # Get the optimizer
-    optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-3)
+    optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-5)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+    scheduler2 = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5)
 
     # Get the loss function
     loss_fn = network.loss_function
@@ -247,6 +255,10 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
                     val_accuracies.append(compute_accuracy(y, d))
             epoch_stat.validation_loss = np.mean(val_losses)
             epoch_stat.validation_accuracy = np.mean(val_accuracies)
+
+            # Step the scheduler with the validation loss
+            scheduler.step()
+            scheduler2.step(epoch_stat.validation_loss)
 
             # Save the model to file
             if model_save_path is not None:

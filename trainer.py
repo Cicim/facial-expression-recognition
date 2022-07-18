@@ -13,8 +13,8 @@ from helpers import print_error
 from neural_net import train, test
 
 
-DEFAULT_TRAINING_DATA_PATH = "datasets/fer2013_train.samples"
-DEFAULT_VALIDATION_DATA_PATH = "datasets/fer2013_valid.samples"
+DEFAULT_TRAINING_DATA_PATH = "datasets/complete.samples"
+DEFAULT_VALIDATION_DATA_PATH = "datasets/fer2013plus_valid.samples"
 
 def main():
     argparser = argparse.ArgumentParser(description="Train a neural network")
