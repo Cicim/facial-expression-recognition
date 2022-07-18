@@ -1,5 +1,4 @@
 # This is the file containing the neural network structure
-from cmath import e
 from time import perf_counter
 
 import numpy as np
@@ -8,8 +7,72 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
+from PIL import Image
 
 from helpers import EMOTIONS, clear_line
+
+## MTCNN face finder
+mtcnn = None
+def find_faces(image: Image.Image):
+    """
+    Load the MTCNN network and extract the faces from the image,
+    with the relative position boxes. Return None if you don't find faces.
+    """
+    global mtcnn
+
+    if mtcnn is None:
+        from facenet_pytorch import MTCNN
+        # Get the GPU
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        # Initialize the MTCNN network
+        mtcnn = MTCNN(
+            thresholds=[0.6, 0.7, 0.7],
+            min_face_size=48,
+            device=device,
+        )
+    
+    # Detect faces
+    boxes, probabilities = mtcnn.detect(image)
+    if boxes is None:
+        return None, None
+
+    # Get the faces
+    faces = []
+    new_boxes = []
+    for box, probability in zip(boxes, probabilities):
+        if probability < 0.95:
+            continue
+        x1, y1, x2, y2 = list(map(int, list(box)))
+
+        w = x2 - x1
+        h = y2 - y1
+
+        if w < 48 or h < 48:
+            continue
+
+        # Make sure the image is a square
+        if w > h:
+            x1 -= (w - h) // 2
+            x2 += (w - h) // 2
+        elif h > w:
+            y1 -= (h - w) // 2
+            y2 += (h - w) // 2
+        
+        # Get the face
+        face = image.crop((x1, y1, x2, y2))
+        # Resize the image to 48x48
+        face = face.resize((48, 48), Image.HAMMING)
+        # Convert it to grayscale
+        face = face.convert('L')
+
+        faces.append(face)
+        new_boxes.append((x1, y1, x2, y2))
+
+    if len(faces) == 0:
+        return None, None
+    
+    return faces, new_boxes
+
 
 ## Classes
 class NeuralNet(nn.Module):
@@ -26,6 +89,44 @@ class NeuralNet(nn.Module):
         model = cls()
         model.load_state_dict(torch.load(path))
         return model
+
+    def predict_from_image(self, image) -> tuple[torch.Tensor, list[tuple[int, int, int, int]]]:
+        """
+        Use this network to predict the emotion of people given a photo
+        """
+        # Convert the image to a PIL Image
+        if type(image) == str:
+            image = Image.open(image)
+        elif type(image) == np.ndarray:
+            image = Image.fromarray(image)
+        elif type(image) == torch.Tensor:
+            image = Image.fromarray(image.numpy())
+
+        # Find the image to RGB
+        image = image.convert('RGB')
+
+        # Find the faces in the image
+        faces, boxes = find_faces(image)
+        if faces is None:
+            return None
+        
+        # Convert all faces to tensors
+        faces = [torch.from_numpy(np.array(face)).float().unsqueeze(0) for face in faces]
+        # Then to a batched tensor
+        faces = torch.stack([face for face in faces])
+        # Bring the range to 0,1
+        faces = faces / 255
+        # Move everything to the gpu
+        device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        faces_gpu = faces.to(device)
+        network_gpu = self.to(device)
+
+        # Apply the network on the dataset
+        with torch.no_grad():
+            output = network_gpu(faces_gpu)
+
+        return output.cpu(), boxes
+
 
 class EpochStats():
     """
@@ -80,8 +181,7 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
     network = network.to(device)
 
     # Get the optimizer
-    optimizer = optim.Adam(network.parameters(), lr=learning_rate)
-    # TODO: add a scheduler
+    optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-3)
 
     # Get the loss function
     loss_fn = network.loss_function
@@ -171,10 +271,8 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
 
         return epoch_stats
     except KeyboardInterrupt:
-        epoch_stats.append(epoch_stat)
         print("\nTraining interrupted.")
         return epoch_stats
-
 
 def print_confusion_matrix(cm: np.ndarray):
     """
