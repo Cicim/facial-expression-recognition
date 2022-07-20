@@ -2,7 +2,6 @@ import argparse
 
 import cv2
 import torch
-from facenet_pytorch import MTCNN
 from helpers import TimeIt, EMOTIONS, print_error
 from fer_nets import neural_nets
 from PIL import Image
@@ -36,8 +35,9 @@ def render_emotions_graph(frame, predicted: torch.Tensor, box: tuple[int, int, i
     # Set the negatives to 0
     predicted[predicted < 0] = 0
     # Normalize the values
-    if predicted.sum() != 0:
-        predicted = predicted / predicted.sum()
+    predsum = torch.sum(predicted)
+    if predsum > 0:
+        predicted = predicted / predsum
 
     bar_width = (x2 - x1) // len(EMOTIONS)
     bar_height = 40

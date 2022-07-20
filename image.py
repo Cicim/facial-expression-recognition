@@ -1,9 +1,7 @@
 import argparse
 
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
-from facenet_pytorch import MTCNN
 from PIL import Image, ImageGrab
 
 from fer_nets import neural_nets
