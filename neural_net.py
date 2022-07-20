@@ -1,4 +1,5 @@
 # This is the file containing the neural network structure
+import random
 from time import perf_counter
 
 import numpy as np
@@ -9,6 +10,7 @@ from torch.utils.data import TensorDataset, DataLoader
 from tqdm import tqdm
 from PIL import Image
 
+from data_loader import NORMALIZATION_MEAN, NORMALIZATION_STD
 from helpers import EMOTIONS, clear_line
 
 ## MTCNN face finder
@@ -47,7 +49,7 @@ def find_faces(image: Image.Image):
         w = x2 - x1
         h = y2 - y1
 
-        if w < 48 or h < 48:
+        if w * h == 0:
             continue
 
         # Make sure the image is a square
@@ -117,6 +119,8 @@ class NeuralNet(nn.Module):
         faces = torch.stack([face for face in faces])
         # Bring the range to 0,1
         faces = faces / 255
+        # Normalize the image
+        faces = (faces - NORMALIZATION_MEAN) / NORMALIZATION_STD
         # Move everything to the gpu
         device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         faces_gpu = faces.to(device)
@@ -164,6 +168,7 @@ def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
     max_target = torch.argmax(target, dim=1)
     correct = sum(max_output == max_target).item()
     return correct / target.shape[0]
+    
 
 def train(network: NeuralNet, training_data: TensorDataset, validation_data: TensorDataset, 
           model_save_path: str = None, epochs: int = 50, batch_size: int = 256, learning_rate: float = 0.001,
@@ -189,8 +194,6 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
 
     # Get the optimizer
     optimizer = optim.Adam(network.parameters(), lr=learning_rate, weight_decay=1e-5)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-    scheduler2 = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=5)
 
     # Get the loss function
     loss_fn = network.loss_function
@@ -215,6 +218,10 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
                 # Move the data to the GPU
                 x = x.to(device)
                 d = d.to(device)
+
+                # Flip these samples in the batch randomly
+                if random.random() < 0.5:
+                    x = torch.flip(x, dims=(2,))
 
                 optimizer.zero_grad()
                 # Forward pass
@@ -255,10 +262,6 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
                     val_accuracies.append(compute_accuracy(y, d))
             epoch_stat.validation_loss = np.mean(val_losses)
             epoch_stat.validation_accuracy = np.mean(val_accuracies)
-
-            # Step the scheduler with the validation loss
-            scheduler.step()
-            scheduler2.step(epoch_stat.validation_loss)
 
             # Save the model to file
             if model_save_path is not None:

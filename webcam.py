@@ -36,7 +36,8 @@ def render_emotions_graph(frame, predicted: torch.Tensor, box: tuple[int, int, i
     # Set the negatives to 0
     predicted[predicted < 0] = 0
     # Normalize the values
-    predicted = predicted / predicted.sum()
+    if predicted.sum() != 0:
+        predicted = predicted / predicted.sum()
 
     bar_width = (x2 - x1) // len(EMOTIONS)
     bar_height = 40

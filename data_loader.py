@@ -87,15 +87,14 @@ def transform_sample(image: bytes, label: bytes) -> tuple[torch.Tensor, torch.Te
     # Then to a tensor
     tensor = torch.from_numpy(nparray).unsqueeze(0)
 
+    # Normalize the image
+    tensor = (tensor - NORMALIZATION_MEAN) / NORMALIZATION_STD
+
     # Read the label as an integer
     label = int.from_bytes(label, 'big')
     # Convert the label to a one-hot tensor of size len(EMOTIONS)
     target = torch.zeros(len(EMOTIONS))
     target[label] = 1
-
-    # Randomly flip the image horizontally
-    if random.random() > 0.125:
-        tensor = torch.flip(tensor, [2])
 
     return tensor, target
     

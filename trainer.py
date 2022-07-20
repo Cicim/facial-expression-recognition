@@ -42,6 +42,11 @@ def main():
         print_error(f"Network type `{args.network}` not found!")
         exit(1)
 
+    # If the command is test, expect a model to load
+    if args.command == "test" and args.load_model is None:
+        print_error("Expected a model to load (pass it with the -lm flag)!")
+        exit(1)
+
     # Load or create the model
     if args.load_model is not None:
         try:
@@ -52,6 +57,7 @@ def main():
             exit(1)
     else:
         network = network_class()
+        
 
     print("Loading validation data...")
     validation_data = load_dataset(args.validation_data, limit=args.limit_validation_samples)
