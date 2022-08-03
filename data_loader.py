@@ -3,7 +3,7 @@
 # All samples will be stored in a custom .samples file.
 import random
 
-from helpers import TimeIt, EMOTIONS
+from helpers import TimeIt, EMOTIONS, print_error
 
 import torch
 import numpy as np
@@ -135,27 +135,44 @@ def load_dataset(samples_file: str, limit: int = None):
 
     return TensorDataset(torch.stack(inputs), torch.stack(targets))
 
-def random_samples_plot(dataset: TensorDataset, num_samples: int = 128, cols: int = 16):
+def load_multiple_datasets(samples_files: list[str]):
     """
-    Plots a random subset of the given tensor
+    Creates a dataset from a list of .samples files.
     """
-    rows = np.ceil(num_samples / cols).astype(int)
+    # Try to open all the files in rb mode
+    files = [open(file, 'rb') for file in samples_files]
+    # If any of the files couldn't be opened, exit
+    if any(file is None for file in files):
+        print_error("Some of the samples files couldn't be opened.")
+        exit(1)
 
-    # Create a random sample of the dataset
-    samples = DataLoader(dataset, batch_size=None, shuffle=True)
+    # Read the first 4 bytes to get the number of samples in each file
+    num_samples = [int.from_bytes(file.read(4), 'little') for file in files]
 
-    fig, axs = plt.subplots(rows, cols, figsize=(20, 12))
-    # Plot the samples
-    for i, (image, target) in tqdm(enumerate(samples)):
-        if i == num_samples:
-            break
-        ax = axs[i // cols, i % cols]
-        # Show the image
-        ax.imshow(image.squeeze().numpy(), cmap='gray')
-        # Add a title with the emotion
-        emotion = torch.argmax(target).item()
-        ax.set_title(EMOTIONS[emotion])
-        ax.axis('off')
+    # Read each image
+    inputs = []
+    targets = []
+
+    for opened_file, samples_count in tqdm(zip(files, num_samples), total=len(files)):
+        for _ in tqdm(range(samples_count), leave=False):
+            # Read the image
+            image = opened_file.read(48 * 48)
+            # If the image is empty, break
+            if not image:
+                break
+            label = opened_file.read(1)
+
+            # Transform the sample
+            input, target = transform_sample(image, label)
+            if input is not None and target is not None:
+                inputs.append(input)
+                targets.append(target)
+
+    # Close all the files
+    for file in files:
+        file.close()
+    
+    return TensorDataset(torch.stack(inputs), torch.stack(targets))
 
 
 ## Dataset combining
@@ -233,6 +250,28 @@ def show_dataset_stats(dataset: TensorDataset):
     print(f'Mean: {mean}')
     print(f'Std: {std}')
 
+def random_samples_plot(dataset: TensorDataset, num_samples: int = 128, cols: int = 16):
+    """
+    Plots a random subset of the given tensor
+    """
+    rows = np.ceil(num_samples / cols).astype(int)
+
+    # Create a random sample of the dataset
+    samples = DataLoader(dataset, batch_size=None, shuffle=True)
+
+    fig, axs = plt.subplots(rows, cols, figsize=(20, 12))
+    # Plot the samples
+    for i, (image, target) in tqdm(enumerate(samples)):
+        if i == num_samples:
+            break
+        ax = axs[i // cols, i % cols]
+        # Show the image
+        ax.imshow(image.squeeze().numpy(), cmap='gray')
+        # Add a title with the emotion
+        emotion = torch.argmax(target).item()
+        ax.set_title(EMOTIONS[emotion])
+        ax.axis('off')
+
 
 ## Dataset transformations
 def equalize_dataset(dst_path: str, src_path: str, samples_per_class: int, discarded_path: str = None, repeat_samples: bool = True):
@@ -306,5 +345,3 @@ def equalize_dataset(dst_path: str, src_path: str, samples_per_class: int, disca
     for emotion, samples in enumerate(samples_by_targets):
         print(f'{EMOTIONS[emotion]:11}: {len(samples):5}')
         
-
-# equalize_dataset('datasets/equalized_fer.samples', 'datasets/fer2013plus_train.samples', 3000, discarded_path='datasets/equalization_losses.samples', repeat_samples=False)

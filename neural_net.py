@@ -1,5 +1,6 @@
 # This is the file containing the neural network structure
 import random
+from enum import Enum
 from time import perf_counter
 
 import numpy as np
@@ -159,6 +160,23 @@ class EpochStats():
         tr_acc = self.training_accuracy * 100
         return f"Epoch {self.epoch:3} [{self.time:5.0f}s]: train_loss: {self.training_loss:.4f}, train_acc: {tr_acc:.1f}%, val_loss: {self.validation_loss:.4f}, val_acc: {val_acc:.1f}%"
 
+
+class ModelSaveStrategy(Enum):
+    """
+    Enum for all the saving strategies of the model
+    """
+    # Only and always saves the last
+    LAST                    = "last",
+    # Only saves the best model
+    BEST                    = "best",
+    # Always save the last models with the epoch number
+    EPOCH                   = "epoch",
+    # Always saves the model with the accuracy postfix
+    LAST_ACCURACY           = "last_accuracy",
+    # Saves the model with the accuracy postfix only if the loss is better that the best one
+    BEST_ACCURACY           = "best_accuracy",
+
+
 ## Training methods
 def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
     """
@@ -171,8 +189,9 @@ def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
     
 
 def train(network: NeuralNet, training_data: TensorDataset, validation_data: TensorDataset, 
-          model_save_path: str = None, epochs: int = 50, batch_size: int = 256, learning_rate: float = 0.001,
-          print_to_screen: bool = True) -> list[EpochStats]:
+          model_save_name: str = None, epochs: int = 50, batch_size: int = 256, learning_rate: float = 0.001,
+          print_to_screen: bool = True, save_strategy: ModelSaveStrategy = ModelSaveStrategy.LAST,
+    ) -> list[EpochStats]:
     """
     Trains the `network` on the `training_data` and validates on the `validation_data`.
     Saves the results to `model_save_path` for each epoch if given.
@@ -200,6 +219,12 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
 
     # Create a list of epoch stats
     epoch_stats: list[EpochStats] = []
+    
+    # For saving strategy
+    best_accuracy = 0
+    best_loss = np.inf
+
+    best_data = lambda acc, loss: acc > best_accuracy or (acc == best_accuracy and loss < best_loss)
 
     try:
         # Training loop
@@ -264,15 +289,34 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
             epoch_stat.validation_accuracy = np.mean(val_accuracies)
 
             # Save the model to file
-            if model_save_path is not None:
-                # Split the path into the filename and extension
-                filename, extension = model_save_path.split(".")
-                # Add the validation accuracy as an integer to the filename
-                filename += f"_{int(epoch_stat.validation_accuracy * 100):03}"
-                # Add the extension back to the filename
-                filename += f".{extension}"
-                
-                torch.save(network.state_dict(), filename)
+            if model_save_name is not None:
+                # Get the name postfix based on the strategy
+                postfix = None
+                save = True
+
+                match save_strategy:
+                    case ModelSaveStrategy.LAST:
+                        pass
+                    case ModelSaveStrategy.BEST:
+                        save = best_data(epoch_stat.validation_accuracy, epoch_stat.validation_loss)
+                    case ModelSaveStrategy.EPOCH:
+                        postfix = f"epoch_{epoch}"
+                    case ModelSaveStrategy.LAST_ACCURACY:
+                        postfix = f"acc_{int(epoch_stat.validation_accuracy*100)}"
+                    case ModelSaveStrategy.BEST_ACCURACY:
+                        postfix = f"acc_{int(epoch_stat.validation_accuracy*100)}"
+                        save = best_data(epoch_stat.validation_accuracy, epoch_stat.validation_loss)
+                    case _:
+                        raise ValueError(f"Unknown save strategy: {save_strategy}")
+
+                if save:
+                    filename = model_save_name
+                    if postfix: filename += f"_{postfix}"
+                    torch.save(network.state_dict(), f"models/{filename}.pt")
+
+                # Recompute the best accuracy and loss
+                best_accuracy = max(epoch_stat.validation_accuracy, best_accuracy)
+                best_loss = min(epoch_stat.validation_loss, best_loss)
 
             # Stop the timer
             epoch_stat.time = perf_counter() - start
