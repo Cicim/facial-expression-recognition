@@ -4,6 +4,7 @@
 # Get parameters through arguments
 import argparse
 import json
+import os
 
 import matplotlib.pyplot as plt
 
@@ -32,6 +33,39 @@ def get_datasets(paths: str, limit=None):
     # If there are more than one, merge them
     return load_multiple_datasets(paths)
 
+def get_model_path(name: str):
+    # If it is already a path
+    if "/" in name or "." in name:
+        return name
+    
+    # Check if the model name file exists
+    if os.path.exists(f"models/{name}.pt"):
+        return f"models/{name}.pt"
+
+    try:
+        # Else, look for all the models starting with
+        # the name in the models folder
+        candidates = [f for f in os.listdir(f"models") if f.startswith(name)]
+
+        max_number = 0
+        best_candidate = None
+        # Sort them by number in their name
+        for candidate in candidates:
+            # Get only the digits in the name
+            filename = candidate.split("_")[-1]
+            filename = filename.split(".")[0]
+            number = int(''.join(c for c in filename if c.isdigit()))
+            if number > max_number:
+                max_number = number
+                best_candidate = candidate
+
+        return 'models/' + best_candidate
+    except:
+        print_error("Could not find model with the name only. Try using the full path")
+        exit(1)
+
+
+
 
 
 DEFAULT_TRAINING_DATA_PATH = "datasets/complete.samples"
@@ -44,20 +78,32 @@ def main():
     argparser.add_argument("command", choices=["train", "test"], help="Train or test the network")
 
     # Arguments
-    argparser.add_argument("--epochs", "-e", type=int, default=10, help="Number of epochs to train")
-    argparser.add_argument("--batch-size", "-b", type=int, default=256, help="Batch size")
-    argparser.add_argument("--learning-rate", "-l", type=float, default=0.001, help="Learning rate")
-    argparser.add_argument("--model-save-name", "-m", type=str, help="Name of the saved model")
-    argparser.add_argument("--validation-data", "-v", type=str, default=DEFAULT_VALIDATION_DATA_PATH, help="Path to the validation data")
-    argparser.add_argument("--training-data", "-t", type=str, default=DEFAULT_TRAINING_DATA_PATH, help="Path to the training data")
-    argparser.add_argument("--load-model", "-lm", type=str, default=None, help="Path to a model to load")
+    argparser.add_argument("--epochs", "-e", type=int, default=10, 
+        help="Number of epochs to train")
+    argparser.add_argument("--batch-size", "-b", type=int, default=256, 
+        help="Batch size")
+    argparser.add_argument("--learning-rate", "-l", type=float, default=0.001, 
+        help="Learning rate")
+    argparser.add_argument("--model-save-name", "-m", type=str, 
+        help="Name of the saved model")
+    argparser.add_argument("--validation-data", "-v", type=str, default=DEFAULT_VALIDATION_DATA_PATH, 
+        help="Path to the validation data")
+    argparser.add_argument("--training-data", "-t", type=str, default=DEFAULT_TRAINING_DATA_PATH, 
+        help="Path to the training data")
+    argparser.add_argument("--load-model", "-lm", type=str, default=None, 
+        help="Path to a model to load")
     argparser.add_argument("--network", "-n", type=str, default="cnn1", choices=neural_nets.keys(), 
-                                              help="Network to use")
-    argparser.add_argument("--show-plots", "-p", action="store_true", help="Show plots")
-    argparser.add_argument("--limit-training-samples", "-lt", type=int, default=None, help="Limit the number of training samples")
-    argparser.add_argument("--limit-validation-samples", "-lv", type=int, default=None, help="Limit the number of validation samples")
+        help="Network to use")
+    argparser.add_argument("--show-plots", "-p", action="store_true", 
+        help="Show plots")
+    argparser.add_argument("--limit-training-samples", "-lt", type=int, default=None, 
+        help="Limit the number of training samples")
+    argparser.add_argument("--limit-validation-samples", "-lv", type=int, default=None, 
+        help="Limit the number of validation samples")
     argparser.add_argument("--save-strategy", "-s", type=str, default="BEST", choices=ModelSaveStrategy.__members__.keys(),
-                                                    help="What to do when saving the model" )
+        help="What to do when saving the model" )
+    argparser.add_argument("--flip-rate", "-f", type=float, default=None, min=0, max=1,
+        help="How often should the samples in a batch be flipped")
     args = argparser.parse_args()
 
     # Get the network class
@@ -79,9 +125,8 @@ def main():
 
 
     if args.load_model is not None:
-        # Tranform the path correctly
-        if "/" not in args.load_model and "." not in args.load_model:
-            args.load_model = f"models/{args.load_model}.pt"
+        args.load_model = get_model_path(args.load_model)
+        print(f"Loading model from `args.load_model`")
         
         # Load the model
         try:

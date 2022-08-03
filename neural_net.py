@@ -191,10 +191,14 @@ def compute_accuracy(output: torch.Tensor, target: torch.Tensor) -> float:
 def train(network: NeuralNet, training_data: TensorDataset, validation_data: TensorDataset, 
           model_save_name: str = None, epochs: int = 50, batch_size: int = 256, learning_rate: float = 0.001,
           print_to_screen: bool = True, save_strategy: ModelSaveStrategy = ModelSaveStrategy.LAST,
+          flip_rate: float = None,
     ) -> list[EpochStats]:
     """
     Trains the `network` on the `training_data` and validates on the `validation_data`.
-    Saves the results to `model_save_path` for each epoch if given.
+    Saves the network's weights to a path depending on `model_save_name` and the `save_strategy`.
+    Runs for the specified number of `epochs` with the given `learning_rate` and `batch_size`.
+    `print_to_screen` determines if the training progress should be printed to the screen.
+    `flip_rate` determines how often the batch images should be flipped for enhancing purposes during training.
     """
     # Get the GPU
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -245,7 +249,7 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
                 d = d.to(device)
 
                 # Flip these samples in the batch randomly
-                if random.random() < 0.5:
+                if flip_rate is not None and random.random() < flip_rate:
                     x = torch.flip(x, dims=(2,))
 
                 optimizer.zero_grad()
