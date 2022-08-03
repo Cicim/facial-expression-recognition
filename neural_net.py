@@ -4,6 +4,7 @@ from enum import Enum
 from time import perf_counter
 
 import numpy as np
+import colorama
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -13,6 +14,7 @@ from PIL import Image
 
 from data_loader import NORMALIZATION_MEAN, NORMALIZATION_STD
 from helpers import EMOTIONS, clear_line
+colorama.deinit()
 
 ## MTCNN face finder
 mtcnn = None
@@ -228,7 +230,7 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
     best_accuracy = 0
     best_loss = np.inf
 
-    best_data = lambda acc, loss: acc > best_accuracy or (acc == best_accuracy and loss < best_loss)
+    best_data = lambda acc, loss: acc - best_accuracy > 1e-3 or (acc == best_accuracy and loss < best_loss)
 
     try:
         # Training loop
@@ -338,39 +340,117 @@ def train(network: NeuralNet, training_data: TensorDataset, validation_data: Ten
         print("\nTraining interrupted.")
         return epoch_stats
 
+
+## Testing methods
+def color_range(t: float):
+    """
+    Returns the ANSI codes for applying a background and a foreground where the
+    background is the interpolation of START_COLOR and END_COLOR for t in [0, 1].
+    """
+    color = (1 - t) * START_COLOR + t * END_COLOR
+    br, bg, bb = color
+    # Convert it to an ansi RGB color
+    background = f"\x1b[48;2;{int(br)};{int(bg)};{int(bb)}m"
+
+    # Choose a color that contrasts with the background
+    if br > 128:
+        foreground = f"\x1b[38;2;0;0;0m"
+    else:
+        foreground = f"\x1b[38;2;216;216;216m"
+
+    return background + foreground
+
+START_COLOR = np.array([8, 8, 8])
+END_COLOR = np.array([256, 128, 32])
+
+RESET = "\x1b[0m"
+
+PREDICTED_LABEL_COLOR = RESET + "\x1b[33m"
+ACTUAL_LABEL_COLOR = RESET + "\x1b[32m"
+TOTAL_TEXT_COLOR = RESET + "\x1b[36m"
+
+COLUMN_WIDTH = 7
+TOT_COLUMN_WIDTH = 10
+
+EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happiness', 'Sadness', 'Surprise', 'Neutrality']
+SHORTER_EMOTIONS = ['Ang', 'Disg', 'Fear', 'Hap', 'Sad', 'Sur', 'Neu']
+
 def print_confusion_matrix(cm: np.ndarray):
     """
-    Prints the confusion matrix of the model.
+    Prints the confusion matrix `cm` to the screen with CoLoRs!
+    Also prints the totals for the rows and the columns, and
+    the overall precision and recall.
     """
-    SHORTER = list(map(lambda x: x.lower()[0:3], EMOTIONS))
-    header = ' ' + '  '.join(SHORTER) + '  ptot '
-    print("     " + 'Actual'.center(len(header)))
-    print("     " + header)
-    for i, head in enumerate(SHORTER):
-        print(head + ' ', end='')
-        
-        # total = np.sum(cm[i])
-        for el in cm[i]:
-            # if total == 0:
-            #     intensity = 0
-            # else:
-            #     ratio = np.sqrt(el / total)
-            #     intensity = int(ratio * 255)
 
-            # rgb_bg = (intensity, 0, intensity // 3)
-            # rgb_fg = (255 - intensity, 255, 255)
+    print(ACTUAL_LABEL_COLOR + f"{' ':>{COLUMN_WIDTH}}", end='')
+    # Print the first line of the header
+    GROUND_TRUTH_SIZE = COLUMN_WIDTH*len(EMOTIONS)
+    print('G R O U N D   T R U T H'.center(GROUND_TRUTH_SIZE), end='\n')
+    # Print the second line of the header
+    print(f"{' ':>{COLUMN_WIDTH}}", end='')
+    for emotion in SHORTER_EMOTIONS:
+        print(f"{emotion:>{COLUMN_WIDTH}}", end='')
+    # Print the TOTAL part of the header
+    print(PREDICTED_LABEL_COLOR + f"{'TOTAL':>{TOT_COLUMN_WIDTH}}", end='')
+    # Print the Precision part of the header
+    print(f"{'Prec%':>{COLUMN_WIDTH}}", end='')
 
-            # bg_ansi = f'\x1b[48;2;{rgb_bg[0]};{rgb_bg[1]};{rgb_bg[2]}m'
-            # fg_ansi = f'\x1b[38;2;{rgb_fg[0]};{rgb_fg[1]};{rgb_fg[2]}m'
+    column_sums = np.sum(cm, axis=0)
+    row_sums = np.sum(cm, axis=1)
 
-            # print(bg_ansi + fg_ansi + str(el).rjust(5), end='\033[0m')
-            print(str(el).rjust(5), end='')
-            
-        print(str(np.sum(cm[i])).rjust(5))
-    print('atot', end='')
-    for i, head in enumerate(SHORTER):
-        print(str(np.sum(cm[:, i])).rjust(5), end='')
-    print()
+    # Print each row
+    for i, emotion in enumerate(SHORTER_EMOTIONS):
+        # Print the row header
+        print(PREDICTED_LABEL_COLOR, end='')
+        print('\n' + "GUESSED"[i], end='')
+        print(f"{emotion:>{COLUMN_WIDTH-2}} ", end='')
+
+        # Reset the ANSI color
+        print(RESET, end='')
+
+        # Print each cell
+        for j in range(len(SHORTER_EMOTIONS)):
+            # Get the range based on the ratio of the cell to the column sum
+            t = 0 if column_sums[j] == 0 else cm[i, j] / column_sums[j]
+            # Print the cell
+            print(color_range(t), end='')
+            print(f"{cm[i, j]:>{COLUMN_WIDTH}}", end='')
+
+        # Print the TOT part of the row
+        print(PREDICTED_LABEL_COLOR + f"{row_sums[i]:>{TOT_COLUMN_WIDTH}}", end='')
+
+        # Print the Precision part of the row
+        precision = 0 if row_sums[i] == 0 else cm[i, i] / row_sums[i]
+        print(' ' + color_range(precision), end='')
+        print(f"{precision*100:>{COLUMN_WIDTH-1}.2f}", end='')
+
+
+    # Print the table separator
+    print(PREDICTED_LABEL_COLOR, end='')
+    print("\n", end="\n")
+    # Print the extra row
+    print("  " + ACTUAL_LABEL_COLOR + "TOTAL", end='')
+
+    # Print the total truth row
+    for i, column in enumerate(column_sums):
+        print(f"{column:>{COLUMN_WIDTH}}", end='')
+    # Print the complete sum
+    print(TOTAL_TEXT_COLOR + f"{cm.sum():>{TOT_COLUMN_WIDTH}}", end='')
+
+    # Print the Recall part of the header
+    print(PREDICTED_LABEL_COLOR + f"\n{'Recall%':>{COLUMN_WIDTH-1}}", end='')
+    for i in range(len(EMOTIONS)):
+        recall = 0 if column_sums[i] == 0 else cm[i, i] / column_sums[i]
+        print(color_range(recall), end='')
+        print(f"{recall*100:>{COLUMN_WIDTH}.2f}", end='')
+
+    # Print the accuracy
+    print(TOTAL_TEXT_COLOR + f"{'Accuracy%':>{(TOT_COLUMN_WIDTH)}}", end=' ')
+    accuracy = cm.trace() / cm.sum()
+    print(color_range(accuracy), end='')
+    print(f"{accuracy*100:>{COLUMN_WIDTH-1}.2f}", end='')
+    print(RESET)
+
 
 def test(network: NeuralNet, validation_data: TensorDataset, batch_size: int = 1):
     """
@@ -417,10 +497,8 @@ def test(network: NeuralNet, validation_data: TensorDataset, batch_size: int = 1
                 loss_sum += loss.item()
                 total += 1
 
-    print(correct_sum, total)
     accuracy = correct_sum / total
     loss = loss_sum / total
 
-    print(f"Accuracy: {accuracy*100:.1f}%")
-    print(f"Loss: {loss:.4f}")
+    print(f"Accuracy: {accuracy*100:.1f}%\t Loss: {loss:.4f}")
     print_confusion_matrix(cm)

@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from data_loader import load_dataset, load_multiple_datasets
 from fer_nets import neural_nets
 from helpers import print_error
-from neural_net import train, test, ModelSaveStrategy
+from neural_net import EpochStats, train, test, ModelSaveStrategy
 
 def transform_dataset_path(path: str):
     # If the path is just a file name, with no / or .
@@ -37,7 +37,7 @@ def get_model_path(name: str):
     # If it is already a path
     if "/" in name or "." in name:
         return name
-    
+
     # Check if the model name file exists
     if os.path.exists(f"models/{name}.pt"):
         return f"models/{name}.pt"
@@ -45,7 +45,7 @@ def get_model_path(name: str):
     try:
         # Else, look for all the models starting with
         # the name in the models folder
-        candidates = [f for f in os.listdir(f"models") if f.startswith(name)]
+        candidates = [f for f in os.listdir(f"models") if f.startswith(name) and f.endswith('.pt')]
 
         max_number = 0
         best_candidate = None
@@ -64,7 +64,34 @@ def get_model_path(name: str):
         print_error("Could not find model with the name only. Try using the full path")
         exit(1)
 
+def save_graphs_and_stats(stats: EpochStats, name: str, show_plots: bool = False):
+    # Create a graph with the loss stats
+    epochs = [stat.epoch for stat in stats]
+    train_loss = [stat.training_loss for stat in stats]
+    val_loss = [stat.validation_loss for stat in stats]
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.plot(epochs, train_loss, label="Training loss")
+    plt.plot(epochs, val_loss, label="Validation loss")
+    plt.legend()
+    plt.savefig(f"models/{name}_loss_graph.png")
+    if show_plots: plt.show()
 
+    plt.clf()
+    # Create a graph with the accuracy stats
+    train_acc = [stat.training_accuracy for stat in stats]
+    val_acc = [stat.validation_accuracy for stat in stats]
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy")
+    plt.plot(epochs, train_acc, label="Training accuracy")
+    plt.plot(epochs, val_acc, label="Validation accuracy")
+    plt.legend()
+    plt.savefig(f"models/{name}_accuracy_graph.png")
+    if show_plots: plt.show()
+
+    # Save the stats to a json file
+    with open(f"models/{name}_stats.json", "w") as f:
+        f.write(json.dumps([stat.__dict__ for stat in stats]))
 
 
 
@@ -102,7 +129,7 @@ def main():
         help="Limit the number of validation samples")
     argparser.add_argument("--save-strategy", "-s", type=str, default="BEST", choices=ModelSaveStrategy.__members__.keys(),
         help="What to do when saving the model" )
-    argparser.add_argument("--flip-rate", "-f", type=float, default=None, min=0, max=1,
+    argparser.add_argument("--flip-rate", "-f", type=float, default=None,
         help="How often should the samples in a batch be flipped")
     args = argparser.parse_args()
 
@@ -126,7 +153,7 @@ def main():
 
     if args.load_model is not None:
         args.load_model = get_model_path(args.load_model)
-        print(f"Loading model from `args.load_model`")
+        print(f"Loading model from `{args.load_model}`")
         
         # Load the model
         try:
@@ -158,33 +185,8 @@ def main():
                       learning_rate=args.learning_rate, print_to_screen=True,
                       save_strategy=args.save_strategy)
 
-        # Create a graph with the loss stats
-        epochs = [stat.epoch for stat in stats]
-        train_loss = [stat.training_loss for stat in stats]
-        val_loss = [stat.validation_loss for stat in stats]
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.plot(epochs, train_loss, label="Training loss")
-        plt.plot(epochs, val_loss, label="Validation loss")
-        plt.legend()
-        plt.savefig("models/loss_stats.png")
-        if args.show_plots: plt.show()
-
-        plt.clf()
-        # Create a graph with the accuracy stats
-        train_acc = [stat.training_accuracy for stat in stats]
-        val_acc = [stat.validation_accuracy for stat in stats]
-        plt.xlabel("Epoch")
-        plt.ylabel("Accuracy")
-        plt.plot(epochs, train_acc, label="Training accuracy")
-        plt.plot(epochs, val_acc, label="Validation accuracy")
-        plt.legend()
-        plt.savefig("models/accuracy_stats.png")
-        if args.show_plots: plt.show()
-
-        # Save the stats to a json file
-        with open("models/stats.json", "w") as f:
-            f.write(json.dumps([stat.__dict__ for stat in stats]))
+        # Save and show the results
+        save_graphs_and_stats(stats, args.model_save_name, args.show_plots)
 
     try:
         # In any case, test the network (print the confusion matrix)

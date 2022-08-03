@@ -3,8 +3,7 @@ from time import perf_counter
 from types import ModuleType, FunctionType
 from gc import get_referents
 
-EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happiness',
-           'Sadness', 'Surprise', 'Neutrality']
+EMOTIONS = ['Anger', 'Disgust', 'Fear', 'Happiness', 'Sadness', 'Surprise', 'Neutrality']
 
 def getsize(obj):
     """sum size of object & members."""
@@ -53,7 +52,7 @@ def sizeof_fmt(num, suffix="B"):
 
 def clear_line():
     # Clear the line with the ANSI code
-    print("\r\033[K\r", end='')
+    print("\r", end='')
     sys.stdout.flush()
 
 def print_error(*args, **kwargs):
